@@ -514,16 +514,19 @@ export async function main() {
         partialConfig.isInteractive() &&
         settings.merged.security.auth.selectedType
       ) {
-        const err = await validateAuthMethod(
-          settings.merged.security.auth.selectedType,
-        );
+        // Evaluate the active auth type while falling back to settings
+        const effectiveAuthType = process.env['DEEPSEEK_API_KEY']
+          ? AuthType.USE_DEEPSEEK
+          : settings.merged.security.auth.selectedType === AuthType.USE_DEEPSEEK
+            ? AuthType.USE_DEEPSEEK
+            : settings.merged.security.auth.selectedType;
+
+        const err = await validateAuthMethod(effectiveAuthType);
         if (err) {
           throw new Error(err);
         }
 
-        await partialConfig.refreshAuth(
-          settings.merged.security.auth.selectedType,
-        );
+        await partialConfig.refreshAuth(effectiveAuthType);
       } else if (!partialConfig.isInteractive()) {
         const authType = await validateNonInteractiveAuth(
           settings.merged.security.auth.selectedType,

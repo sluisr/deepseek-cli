@@ -18,6 +18,8 @@ import {
   DEFAULT_GEMINI_FLASH_MODEL,
   DEFAULT_GEMINI_FLASH_LITE_MODEL,
   GEMINI_MODEL_ALIAS_AUTO,
+  DEEPSEEK_CHAT_MODEL,
+  DEEPSEEK_REASONER_MODEL,
   GEMMA_4_31B_IT_MODEL,
   GEMMA_4_26B_A4B_IT_MODEL,
   ModelSlashCommandEvent,
@@ -120,8 +122,25 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
     },
     { isActive: true },
   );
+  const isDeepSeekAuth = config?.getContentGeneratorConfig()?.authType === AuthType.USE_DEEPSEEK;
+
   const mainOptions = useMemo(() => {
-    // --- DYNAMIC PATH ---
+    if (isDeepSeekAuth) {
+      return [
+        {
+          value: DEEPSEEK_CHAT_MODEL,
+          title: 'DeepSeek-V4-Flash',
+          description: 'Fast, efficient and cost-effective (1M context)',
+          key: DEEPSEEK_CHAT_MODEL,
+        },
+        {
+          value: DEEPSEEK_REASONER_MODEL,
+          title: 'DeepSeek-V4-Pro (Thinking)',
+          description: 'Superior performance with deep reasoning (1M context)',
+          key: DEEPSEEK_REASONER_MODEL,
+        },
+      ];
+    }
     if (
       config?.getExperimentalDynamicModelConfiguration?.() === true &&
       config.getModelConfigService

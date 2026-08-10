@@ -53,6 +53,8 @@ export const UserIdentity: React.FC<UserIdentityProps> = ({ config }) => {
               <Text bold>Signed in with Google{email ? ':' : ''}</Text>
               {email ? ` ${email}` : ''}
             </Text>
+          ) : authType === AuthType.USE_DEEPSEEK ? (
+            'Authenticated with DeepSeek API Key'
           ) : (
             `Authenticated with ${authType}`
           )}

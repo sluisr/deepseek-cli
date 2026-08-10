@@ -13,7 +13,7 @@ import type {
   GenerateContentConfig,
 } from '@google/genai';
 import type { Config } from '../config/config.js';
-import type { ContentGenerator, AuthType } from './contentGenerator.js';
+import { type ContentGenerator, AuthType } from './contentGenerator.js';
 import { handleFallback } from '../fallback/handler.js';
 import { getResponseText } from '../utils/partUtils.js';
 import { reportError } from '../utils/errorReporting.js';
@@ -29,7 +29,7 @@ import {
 } from '../telemetry/types.js';
 import { retryWithBackoff, getRetryErrorType } from '../utils/retry.js';
 import { coreEvents } from '../utils/events.js';
-import { getDisplayString } from '../config/models.js';
+import { getDisplayString, DEEPSEEK_CHAT_MODEL } from '../config/models.js';
 import type { ModelConfigKey } from '../services/modelConfigService.js';
 import {
   applyModelSelection,
@@ -239,10 +239,19 @@ export class BaseLlmClient {
   async countTokens(
     options: CountTokenOptions,
   ): Promise<{ totalTokens: number }> {
-    const model = options.modelConfigKey
+    const isDeepSeek =
+      this.config.getContentGeneratorConfig?.()?.authType === AuthType.USE_DEEPSEEK ||
+      this.config.getModel().startsWith('deepseek-');
+
+    let model = options.modelConfigKey
       ? this.config.modelConfigService.getResolvedConfig(options.modelConfigKey)
           .model
       : this.config.getActiveModel();
+
+    if (isDeepSeek && !model.startsWith('deepseek-')) {
+      model = DEEPSEEK_CHAT_MODEL;
+    }
+
     const result = await this.contentGenerator.countTokens({
       model,
       contents: options.contents,
@@ -308,7 +317,14 @@ export class BaseLlmClient {
       maxAttempts: availabilityMaxAttempts,
     } = applyModelSelection(this.config, modelConfigKey);
 
-    let currentModel = model;
+    const isDeepSeek =
+      this.config.getContentGeneratorConfig?.()?.authType === AuthType.USE_DEEPSEEK ||
+      this.config.getModel().startsWith('deepseek-');
+
+    let currentModel =
+      isDeepSeek && !model.startsWith('deepseek-')
+        ? DEEPSEEK_CHAT_MODEL
+        : model;
     let currentGenerateContentConfig = generateContentConfig;
 
     // Define callback to fetch context dynamically since active model may get updated during retry loop
@@ -332,7 +348,10 @@ export class BaseLlmClient {
               ...modelConfigKey,
               model: activeModel,
             });
-          currentModel = resolvedModel;
+          currentModel =
+            isDeepSeek && !resolvedModel.startsWith('deepseek-')
+              ? DEEPSEEK_CHAT_MODEL
+              : resolvedModel;
           currentGenerateContentConfig = generateContentConfig;
         }
         const finalConfig: GenerateContentConfig = {

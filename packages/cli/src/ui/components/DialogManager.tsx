@@ -297,7 +297,6 @@ export const DialogManager = ({
     return (
       <Box flexDirection="column">
         <ApiAuthDialog
-          key={uiState.apiKeyDefaultValue}
           onSubmit={uiActions.handleApiKeySubmit}
           onCancel={uiActions.handleApiKeyCancel}
           error={uiState.authError}

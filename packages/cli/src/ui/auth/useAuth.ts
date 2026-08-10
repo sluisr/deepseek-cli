@@ -10,6 +10,7 @@ import {
   AuthType,
   type Config,
   loadApiKey,
+  loadDeepSeekApiKey,
   debugLogger,
   isAccountSuspendedError,
   ProjectIdRequiredError,
@@ -29,8 +30,8 @@ export async function validateAuthMethodWithSettings(
   if (settings.merged.security.auth.useExternal) {
     return null;
   }
-  // If using Gemini API key, we don't validate it here as we might need to prompt for it.
-  if (authType === AuthType.USE_GEMINI) {
+  // If using Gemini or DeepSeek API key, we don't validate it here as we might need to prompt for it.
+  if (authType === AuthType.USE_GEMINI || authType === AuthType.USE_DEEPSEEK) {
     return null;
   }
   return validateAuthMethod(authType);
@@ -44,9 +45,14 @@ export const useAuthCommand = (
   initialAuthError: string | null = null,
   initialAccountSuspensionInfo: AccountSuspensionInfo | null = null,
 ) => {
-  const [authState, setAuthState] = useState<AuthState>(
-    initialAuthError ? AuthState.Updating : AuthState.Unauthenticated,
-  );
+  const [authState, setAuthState] = useState<AuthState>(() => {
+    if (initialAuthError) return AuthState.Updating;
+    const authType = settings.merged.security.auth.selectedType;
+    if (!authType && !process.env['DEEPSEEK_API_KEY'] && !process.env['GEMINI_API_KEY']) {
+      return AuthState.Updating;
+    }
+    return AuthState.Unauthenticated;
+  });
 
   const [authError, setAuthError] = useState<string | null>(initialAuthError);
   const [accountSuspensionInfo, setAccountSuspensionInfo] =
@@ -54,6 +60,9 @@ export const useAuthCommand = (
   const [apiKeyDefaultValue, setApiKeyDefaultValue] = useState<
     string | undefined
   >(undefined);
+  const [pendingAuthType, setPendingAuthType] = useState<AuthType | undefined>(
+    undefined,
+  );
 
   const onAuthError = useCallback(
     (error: string | null) => {
@@ -65,17 +74,31 @@ export const useAuthCommand = (
     [setAuthError, setAuthState],
   );
 
-  const reloadApiKey = useCallback(async () => {
-    const envKey = process.env['GEMINI_API_KEY'];
-    if (envKey !== undefined) {
-      setApiKeyDefaultValue(envKey);
-      return envKey;
-    }
+  const reloadApiKey = useCallback(
+    async (authType?: AuthType) => {
+      const resolvedType = authType ?? pendingAuthType ?? settings.merged.security.auth.selectedType;
+      if (resolvedType === AuthType.USE_DEEPSEEK) {
+        const envKey = process.env['DEEPSEEK_API_KEY'];
+        if (envKey) {
+          setApiKeyDefaultValue(envKey);
+          return envKey;
+        }
+        const storedKey = (await loadDeepSeekApiKey()) ?? '';
+        setApiKeyDefaultValue(storedKey);
+        return storedKey;
+      }
+      const envKey = process.env['GEMINI_API_KEY'];
+      if (envKey !== undefined) {
+        setApiKeyDefaultValue(envKey);
+        return envKey;
+      }
 
-    const storedKey = (await loadApiKey()) ?? '';
-    setApiKeyDefaultValue(storedKey);
-    return storedKey;
-  }, []);
+      const storedKey = (await loadApiKey()) ?? '';
+      setApiKeyDefaultValue(storedKey);
+      return storedKey;
+    },
+    [pendingAuthType, settings],
+  );
 
   useEffect(() => {
     if (authState === AuthState.AwaitingApiKeyInput) {
@@ -103,9 +126,14 @@ export const useAuthCommand = (
         return;
       }
 
-      if (authType === AuthType.USE_GEMINI) {
-        const key = await reloadApiKey(); // Use the unified function
+      if (
+        authType === AuthType.USE_GEMINI ||
+        authType === AuthType.USE_DEEPSEEK
+      ) {
+        const key = await reloadApiKey(authType);
         if (!key) {
+          setAuthError(null);
+          setPendingAuthType(authType);
           setAuthState(AuthState.AwaitingApiKeyInput);
           return;
         }

@@ -20,6 +20,8 @@ import { createCodeAssistContentGenerator } from '../code_assist/codeAssist.js';
 import { isCloudShell } from '../ide/detect-ide.js';
 import type { Config } from '../config/config.js';
 import { loadApiKey } from './apiKeyCredentialStorage.js';
+import { loadDeepSeekApiKey } from './deepseekApiKeyStorage.js';
+import { DeepSeekContentGenerator } from './deepseekContentGenerator.js';
 
 import type { UserTierId, GeminiUserTier } from '../code_assist/types.js';
 import { LoggingContentGenerator } from './loggingContentGenerator.js';
@@ -67,6 +69,7 @@ export enum AuthType {
   LEGACY_CLOUD_SHELL = 'cloud-shell',
   COMPUTE_ADC = 'compute-default-credentials',
   GATEWAY = 'gateway',
+  USE_DEEPSEEK = 'deepseek-api-key',
 }
 
 /**
@@ -78,6 +81,9 @@ export enum AuthType {
  * 3. GEMINI_API_KEY -> USE_GEMINI
  */
 export function getAuthTypeFromEnv(): AuthType | undefined {
+  if (process.env['DEEPSEEK_API_KEY']) {
+    return AuthType.USE_DEEPSEEK;
+  }
   if (process.env['GOOGLE_GENAI_USE_GCA'] === 'true') {
     return AuthType.LOGIN_WITH_GOOGLE;
   }
@@ -187,6 +193,15 @@ export async function createContentGeneratorConfig(
     return contentGeneratorConfig;
   }
 
+  if (authType === AuthType.USE_DEEPSEEK) {
+    const deepseekKey =
+      apiKey || getEnv('DEEPSEEK_API_KEY') || (await loadDeepSeekApiKey()) || undefined;
+    if (deepseekKey) {
+      contentGeneratorConfig.apiKey = deepseekKey;
+      return contentGeneratorConfig;
+    }
+  }
+
   if (
     authType === AuthType.USE_VERTEX_AI &&
     (googleApiKey || (googleCloudProject && googleCloudLocation))
@@ -227,7 +242,7 @@ export async function createContentGenerator(
       return new LoggingContentGenerator(fakeGenerator, gcConfig);
     }
     const version = await getVersion();
-    const model = resolveModel(
+    const resolvedModel = resolveModel(
       gcConfig.getModel(),
       config.authType === AuthType.USE_GEMINI ||
         config.authType === AuthType.USE_VERTEX_AI ||
@@ -237,6 +252,10 @@ export async function createContentGenerator(
       gcConfig,
       gcConfig.hasGemini35FlashGAAccess?.() ?? false,
     );
+    const model =
+      config.authType === AuthType.USE_DEEPSEEK && !resolvedModel.startsWith('deepseek-')
+        ? DEEPSEEK_CHAT_MODEL
+        : resolvedModel;
     const customHeadersEnv =
       process.env['GEMINI_CLI_CUSTOM_HEADERS'] || undefined;
     const clientName = gcConfig.getClientName();
@@ -289,6 +308,13 @@ export async function createContentGenerator(
       config.apiKey
     ) {
       baseHeaders['Authorization'] = `Bearer ${config.apiKey}`;
+    }
+
+    if (config.authType === AuthType.USE_DEEPSEEK) {
+      return new LoggingContentGenerator(
+        new DeepSeekContentGenerator(config.apiKey || '', config.baseUrl || 'https://api.deepseek.com/v1'),
+        gcConfig
+      );
     }
     if (
       config.authType === AuthType.LOGIN_WITH_GOOGLE ||

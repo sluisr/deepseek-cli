@@ -17,6 +17,7 @@ import { ClassifierStrategy } from './strategies/classifierStrategy.js';
 import { NumericalClassifierStrategy } from './strategies/numericalClassifierStrategy.js';
 import { CompositeStrategy } from './strategies/compositeStrategy.js';
 import { FallbackStrategy } from './strategies/fallbackStrategy.js';
+import { DeepSeekClassifierStrategy } from './strategies/deepseekClassifierStrategy.js';
 import { OverrideStrategy } from './strategies/overrideStrategy.js';
 import { ApprovalModeStrategy } from './strategies/approvalModeStrategy.js';
 
@@ -39,8 +40,13 @@ export class ModelRouterService {
   private initializeDefaultStrategy(): TerminalStrategy {
     const strategies: RoutingStrategy[] = [];
 
-    // Order matters here. Fallback and override are checked first.
+    // Order matters here. Fallback is checked first.
     strategies.push(new FallbackStrategy());
+
+    // DeepSeek classifier runs before OverrideStrategy so it can escalate
+    // deepseek-chat → deepseek-reasoner before the override short-circuits.
+    strategies.push(new DeepSeekClassifierStrategy());
+
     strategies.push(new OverrideStrategy());
 
     // Approval mode is next.

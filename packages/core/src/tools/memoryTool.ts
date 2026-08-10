@@ -8,7 +8,7 @@ import * as path from 'node:path';
 import { Storage } from '../config/storage.js';
 import { resolveToRealPath } from '../utils/paths.js';
 
-export const DEFAULT_CONTEXT_FILENAME = 'GEMINI.md';
+export const DEFAULT_CONTEXT_FILENAME = ['DEEPSEEK.md', 'GEMINI.md'];
 export const PROJECT_MEMORY_INDEX_FILENAME = 'MEMORY.md';
 
 // This variable will hold the currently configured filenames for GEMINI.md context files.

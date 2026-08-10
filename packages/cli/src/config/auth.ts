@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AuthType, loadApiKey } from '@google/gemini-cli-core';
+import { AuthType, loadApiKey, loadDeepSeekApiKey } from '@google/gemini-cli-core';
 import { loadEnvironment, loadSettings } from './settings.js';
 
 export async function validateAuthMethod(
@@ -39,6 +39,17 @@ export async function validateAuthMethod(
         'When using Vertex AI, you must specify either:\n' +
         '• GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION environment variables.\n' +
         '• GOOGLE_API_KEY environment variable (if using express mode).\n' +
+        'Update your environment and try again (no reload needed if using .env)!'
+      );
+    }
+    return null;
+  }
+
+  if (authMethod === AuthType.USE_DEEPSEEK) {
+    const key = process.env['DEEPSEEK_API_KEY'] || (await loadDeepSeekApiKey());
+    if (!key) {
+      return (
+        'When using DeepSeek API, you must specify the DEEPSEEK_API_KEY environment variable.\n' +
         'Update your environment and try again (no reload needed if using .env)!'
       );
     }

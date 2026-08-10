@@ -5,6 +5,7 @@
  */
 
 import { Box, Text } from 'ink';
+import Gradient from 'ink-gradient';
 import { UserIdentity } from './UserIdentity.js';
 import { Tips } from './Tips.js';
 import { useSettings } from '../contexts/SettingsContext.js';
@@ -27,7 +28,7 @@ interface AppHeaderProps {
   showDetails?: boolean;
 }
 
-const DEFAULT_ICON = `▝▜▄  
+const DEFAULT_ICON = `\u200B▝▜▄  
   ▝▜▄
  ▗▟▀ 
 ▝▀    `;
@@ -97,11 +98,15 @@ export const AppHeader = ({ version, showDetails = true }: AppHeaderProps) => {
   const renderLogo = () => (
     <Box flexDirection="row">
       <Box flexShrink={0}>
-        <ThemedGradient>{ICON}</ThemedGradient>
+        <Gradient colors={['#1e3a8a', '#2563eb', '#93c5fd']}>
+          <Text>{ICON}</Text>
+        </Gradient>
       </Box>
       {logoTextArt && (
         <Box marginLeft={3}>
-          <Text color={theme.text.primary}>{logoTextArt}</Text>
+          <Gradient colors={['#1e3a8a', '#2563eb', '#93c5fd']}>
+            <Text>{logoTextArt}</Text>
+          </Gradient>
         </Box>
       )}
     </Box>
@@ -112,7 +117,7 @@ export const AppHeader = ({ version, showDetails = true }: AppHeaderProps) => {
       {/* Line 1: Gemini CLI vVersion [Updating] */}
       <Box>
         <Text bold color={theme.text.primary}>
-          Gemini CLI
+          DeepSeek CLI
         </Text>
         <Text color={theme.text.secondary}> v{version}</Text>
         {updateInfo?.isUpdating && (

@@ -31,6 +31,7 @@ import {
   getVersion,
   coreEvents,
   GEMINI_MODEL_ALIAS_AUTO,
+  DEEPSEEK_CHAT_MODEL,
   getAdminErrorMessage,
   isHeadlessMode,
   Config,
@@ -838,7 +839,7 @@ export async function loadCliConfig(
     interactive,
   );
 
-  const defaultModel = GEMINI_MODEL_ALIAS_AUTO;
+  const defaultModel = DEEPSEEK_CHAT_MODEL;
   const rawModel =
     argv.model || process.env['GEMINI_MODEL'] || settings.model?.name;
 

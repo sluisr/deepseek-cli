@@ -1,6 +1,6 @@
 {
   "name": "@google/gemini-cli",
-  "version": "0.54.4",
+  "version": "1.2.0",
   "description": "Gemini CLI",
   "license": "Apache-2.0",
   "repository": {
@@ -58,7 +58,7 @@
     "open": "10.1.2",
     "prompts": "2.4.2",
     "proper-lockfile": "4.1.2",
-    "react": "19.2.4",
+    "react": "19.2.8",
     "shell-quote": "1.8.3",
     "simple-git": "3.28.0",
     "string-width": "8.1.0",

@@ -66,6 +66,7 @@ export * from './code_assist/telemetry.js';
 export * from './code_assist/admin/admin_controls.js';
 export * from './code_assist/admin/mcpUtils.js';
 export * from './core/apiKeyCredentialStorage.js';
+export * from './core/deepseekApiKeyStorage.js';
 
 // Export utilities
 export * from './utils/fetch.js';

@@ -9,8 +9,12 @@ import { useMemo } from 'react';
 import { Box, Text, useIsScreenReaderEnabled } from 'ink';
 import { useUIState } from '../../contexts/UIStateContext.js';
 import { theme } from '../../semantic-colors.js';
-import { interpolateColor, resolveColor } from '../../themes/color-utils.js';
-import { supportsTrueColor } from '@google/gemini-cli-core';
+import {
+  interpolateColor,
+  resolveColor,
+  getSafeLowColorBackground,
+} from '../../themes/color-utils.js';
+import { isLowColorDepth, isITerm2 } from '../../utils/terminalUtils.js';
 
 export interface HalfLinePaddedBoxProps {
   /**
@@ -52,7 +56,14 @@ const HalfLinePaddedBoxInternal: React.FC<HalfLinePaddedBoxProps> = ({
   const { terminalWidth } = useUIState();
   const terminalBg = theme.background.primary || 'black';
 
+  const isLowColor = isLowColorDepth();
+
   const backgroundColor = useMemo(() => {
+    // Interpolated background colors often look bad in 256-color terminals
+    if (isLowColor) {
+      return getSafeLowColorBackground(terminalBg);
+    }
+
     const resolvedBase =
       resolveColor(backgroundBaseColor) || backgroundBaseColor;
     const resolvedTerminalBg = resolveColor(terminalBg) || terminalBg;
@@ -62,20 +73,10 @@ const HalfLinePaddedBoxInternal: React.FC<HalfLinePaddedBoxProps> = ({
       resolvedBase,
       backgroundOpacity,
     );
-  }, [backgroundBaseColor, backgroundOpacity, terminalBg]);
+  }, [backgroundBaseColor, backgroundOpacity, terminalBg, isLowColor]);
 
   if (!backgroundColor) {
     return <>{children}</>;
-  }
-
-  const noTrueColor = !supportsTrueColor();
-
-  if (noTrueColor) {
-    return (
-      <Box width={terminalWidth} backgroundColor={backgroundColor} paddingY={1}>
-        {children}
-      </Box>
-    );
   }
 
   return (

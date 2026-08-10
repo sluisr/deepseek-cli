@@ -66,6 +66,7 @@ import {
   recordExitFail,
   ShellExecutionService,
   saveApiKey,
+  saveDeepSeekApiKey,
   debugLogger,
   isValidEditorType,
   coreEvents,
@@ -730,9 +731,10 @@ export const AppContainer = (props: AppContainerProps) => {
     initializationResult.authError,
     initializationResult.accountSuspensionInfo,
   );
-  const [authContext, setAuthContext] = useState<{ requiresRestart?: boolean }>(
-    {},
-  );
+  const [authContext, setAuthContext] = useState<{
+    requiresRestart?: boolean;
+    pendingAuthType?: AuthType;
+  }>({});
 
   useEffect(() => {
     if (authState === AuthState.Authenticated && authContext.requiresRestart) {
@@ -854,15 +856,27 @@ Logging in with Google... Restarting Gemini CLI to continue.
   const handleApiKeySubmit = useCallback(
     async (apiKey: string) => {
       try {
-        onAuthError(null);
         if (!apiKey.trim()) {
-          onAuthError('API key cannot be empty or whitespace only.');
+          setAuthError('API key cannot be empty or whitespace only.');
           return;
         }
 
-        await saveApiKey(apiKey);
-        await reloadApiKey();
-        await config.refreshAuth(AuthType.USE_GEMINI);
+        const authType =
+          authContext.pendingAuthType ??
+          settings.merged.security.auth.selectedType ??
+          AuthType.USE_DEEPSEEK;
+
+        if (authType === AuthType.USE_DEEPSEEK) {
+          await saveDeepSeekApiKey(apiKey);
+          await reloadApiKey(AuthType.USE_DEEPSEEK);
+          await config.refreshAuth(AuthType.USE_DEEPSEEK);
+          settings.setValue(SettingScope.User, 'security.auth.selectedType', AuthType.USE_DEEPSEEK);
+        } else {
+          await saveApiKey(apiKey);
+          await reloadApiKey();
+          await config.refreshAuth(AuthType.USE_GEMINI);
+          settings.setValue(SettingScope.User, 'security.auth.selectedType', AuthType.USE_GEMINI);
+        }
         setAuthState(AuthState.Authenticated);
       } catch (e) {
         onAuthError(

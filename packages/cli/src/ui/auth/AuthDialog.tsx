@@ -44,36 +44,9 @@ export function AuthDialog({
   const [exiting, setExiting] = useState(false);
   let items = [
     {
-      label: 'Sign in with Google',
-      value: AuthType.LOGIN_WITH_GOOGLE,
-      key: AuthType.LOGIN_WITH_GOOGLE,
-    },
-    ...(process.env['CLOUD_SHELL'] === 'true'
-      ? [
-          {
-            label: 'Use Cloud Shell user credentials',
-            value: AuthType.COMPUTE_ADC,
-            key: AuthType.COMPUTE_ADC,
-          },
-        ]
-      : process.env['GEMINI_CLI_USE_COMPUTE_ADC'] === 'true'
-        ? [
-            {
-              label: 'Use metadata server application default credentials',
-              value: AuthType.COMPUTE_ADC,
-              key: AuthType.COMPUTE_ADC,
-            },
-          ]
-        : []),
-    {
-      label: 'Use Gemini API Key',
-      value: AuthType.USE_GEMINI,
-      key: AuthType.USE_GEMINI,
-    },
-    {
-      label: 'Vertex AI',
-      value: AuthType.USE_VERTEX_AI,
-      key: AuthType.USE_VERTEX_AI,
+      label: 'Use DeepSeek API Key',
+      value: AuthType.USE_DEEPSEEK,
+      key: AuthType.USE_DEEPSEEK,
     },
   ];
 
@@ -119,6 +92,16 @@ export function AuthDialog({
         return;
       }
       if (authType) {
+        if (
+          authType === AuthType.USE_GEMINI ||
+          authType === AuthType.USE_DEEPSEEK
+        ) {
+          onAuthError(null);
+          setAuthContext({ pendingAuthType: authType });
+          setAuthState(AuthState.AwaitingApiKeyInput);
+          return;
+        }
+
         const needsRestart =
           authType === AuthType.LOGIN_WITH_GOOGLE ||
           (authType === AuthType.USE_VERTEX_AI &&
@@ -140,21 +123,14 @@ export function AuthDialog({
           setTimeout(relaunchApp, 100);
           return;
         }
-
-        if (authType === AuthType.USE_GEMINI) {
-          // Always show the API key input dialog so the user can
-          // explicitly enter or confirm their key, regardless of
-          // whether GEMINI_API_KEY env var or a stored key exists.
-          setAuthState(AuthState.AwaitingApiKeyInput);
-          return;
-        }
       }
       setAuthState(AuthState.Unauthenticated);
     },
-    [settings, config, setAuthState, exiting, setAuthContext],
+    [settings, config, setAuthState, exiting, setAuthContext, onAuthError],
   );
 
   const handleAuthSelect = async (authMethod: AuthType) => {
+    onAuthError(null);
     const error = await validateAuthMethodWithSettings(
       authMethod,
       settings,
@@ -247,13 +223,14 @@ export function AuthDialog({
         </Box>
         <Box marginTop={1}>
           <Text color={theme.text.primary}>
-            Terms of Services and Privacy Notice for Gemini CLI
+            DeepSeek CLI — unofficial adaptation by sluisr
           </Text>
         </Box>
         <Box marginTop={1}>
-          <Text color={theme.text.link}>
-            {'https://geminicli.com/docs/resources/tos-privacy/'}
-          </Text>
+          <Text color={theme.text.link}>{'https://platform.deepseek.com'}</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text color={theme.text.link}>{'https://sluisr.com/'}</Text>
         </Box>
       </Box>
     </Box>

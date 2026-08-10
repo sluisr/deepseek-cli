@@ -82,6 +82,9 @@ export const DEFAULT_GEMINI_FLASH_LITE_MODEL = 'gemini-3.1-flash-lite';
 /** @deprecated Gemini 3.1 Flash Lite is now GA. Use DEFAULT_GEMINI_FLASH_LITE_MODEL. */
 export const PREVIEW_GEMINI_FLASH_LITE_MODEL = 'none';
 
+export const DEEPSEEK_CHAT_MODEL = 'deepseek-v4-flash';
+export const DEEPSEEK_REASONER_MODEL = 'deepseek-v4-pro';
+
 export const GEMMA_4_31B_IT_MODEL = 'gemma-4-31b-it';
 export const GEMMA_4_26B_A4B_IT_MODEL = 'gemma-4-26b-a4b-it';
 
@@ -96,6 +99,9 @@ export const VALID_GEMINI_MODELS = new Set([
   DEFAULT_GEMINI_3_5_FLASH_MODEL,
   SECONDARY_GEMINI_3_5_FLASH_MODEL,
   DEFAULT_GEMINI_FLASH_LITE_MODEL,
+
+  DEEPSEEK_CHAT_MODEL,
+  DEEPSEEK_REASONER_MODEL,
 
   GEMMA_4_31B_IT_MODEL,
   GEMMA_4_26B_A4B_IT_MODEL,
@@ -300,6 +306,12 @@ export function resolveClassifierModel(
         useGemini3_5Flash,
       },
     );
+  }
+
+  if (requestedModel.startsWith('deepseek-')) {
+    return modelAlias === GEMINI_MODEL_ALIAS_FLASH
+      ? DEEPSEEK_CHAT_MODEL
+      : DEEPSEEK_REASONER_MODEL;
   }
 
   if (modelAlias === GEMINI_MODEL_ALIAS_FLASH) {
