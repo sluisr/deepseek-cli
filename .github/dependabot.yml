@@ -6,12 +6,6 @@ updates:
       interval: 'weekly'
       day: 'monday'
     open-pull-requests-limit: 10
-    reviewers:
-      - 'joshualitt'
-    cooldown:
-      semver-major-days: 14
-      semver-minor-days: 14
-      semver-patch-days: 14
     groups:
       npm-dependencies:
         patterns:
@@ -26,12 +20,6 @@ updates:
       interval: 'weekly'
       day: 'monday'
     open-pull-requests-limit: 10
-    reviewers:
-      - 'joshualitt'
-    cooldown:
-      semver-major-days: 14
-      semver-minor-days: 14
-      semver-patch-days: 14
     groups:
       actions-dependencies:
         patterns:
@@ -39,3 +27,4 @@ updates:
         update-types:
           - 'minor'
           - 'patch'
+
