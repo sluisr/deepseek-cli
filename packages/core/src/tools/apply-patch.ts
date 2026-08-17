@@ -1,7 +1,7 @@
 /**
  * @license
  * Copyright 2026 Google LLC
- * Copyright 2026 DeepSeek CLI Team
+ * Copyright 2026 sluisr
  * SPDX-License-Identifier: Apache-2.0
  */
 

@@ -182,8 +182,15 @@ export function convertSessionToClientHistory(
           },
         });
 
-        // 4. Generate tool response turns
-        if (msg.toolCalls && msg.toolCalls.length > 0) {
+        // 4. Generate tool response turns ONLY if the next message in the recording
+        // is NOT already a user turn providing the functionResponse.
+        const nextMsg = messages[messages.indexOf(msg) + 1];
+        const nextMsgHasResponses =
+          nextMsg &&
+          nextMsg.type === 'user' &&
+          ensurePartArray(nextMsg.content).some((p) => !!p.functionResponse);
+
+        if (!nextMsgHasResponses && msg.toolCalls && msg.toolCalls.length > 0) {
           const functionResponseParts: Part[] = [];
           for (const toolCall of msg.toolCalls) {
             if (toolCall.result) {

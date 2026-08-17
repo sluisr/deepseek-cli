@@ -1,6 +1,7 @@
 /**
  * @license
  * Copyright 2025 Google LLC
+ * Copyright 2026 sluisr
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -25,6 +26,7 @@ import { resolveToolDeclaration } from './definitions/resolver.js';
 import { LlmRole } from '../telemetry/llmRole.js';
 import type { AgentLoopContext } from '../config/agent-loop-context.js';
 import { AuthType } from '../core/contentGenerator.js';
+import { loadDeepSeekApiKey } from '../core/deepseekApiKeyStorage.js';
 
 interface GroundingChunkWeb {
   uri?: string;
@@ -98,7 +100,8 @@ class WebSearchToolInvocation extends BaseToolInvocation<
       const query = this.params.query;
       const apiKey =
         config?.getContentGeneratorConfig()?.apiKey ||
-        process.env['DEEPSEEK_API_KEY'];
+        process.env['DEEPSEEK_API_KEY'] ||
+        (await loadDeepSeekApiKey());
 
       if (apiKey) {
         try {

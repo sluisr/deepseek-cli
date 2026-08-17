@@ -41,6 +41,7 @@ interface ModelDialogProps {
 }
 
 const DEEPSEEK_CONFIG_VALUE = '__deepseek_flash_config__';
+const DEEPSEEK_PRO_CONFIG_VALUE = '__deepseek_pro_config__';
 
 const REASONING_EFFORT_LEVELS: Array<'low' | 'medium' | 'high'> = ['low', 'medium', 'high'];
 const REASONING_EFFORT_LABELS: Record<string, string> = {
@@ -53,6 +54,28 @@ const REASONING_EFFORT_COLORS: Record<string, string> = {
   medium: '#ff9800', // orange — moderate effort
   high: '#f44336',  // red    — maximum thinking
 };
+
+const PRO_REASONING_EFFORT_LEVELS: Array<'low' | 'medium' | 'high' | 'max'> = [
+  'low',
+  'medium',
+  'high',
+  'max',
+];
+const PRO_REASONING_EFFORT_LABELS: Record<string, string> = {
+  low: 'Fast & concise — quick thinking',
+  medium: 'Balanced — daily coding tasks',
+  high: 'Deep reasoning — complex architecture & hard bugs (Standard)',
+  max: 'Maximum depth — large scale refactoring & novel design',
+};
+const PRO_REASONING_EFFORT_COLORS: Record<string, string> = {
+  low: '#69f0ae',   // green  — light, fast
+  medium: '#ff9800', // orange — moderate effort
+  high: '#f44336',  // red    — deep thinking
+  max: '#e040fb',   // purple / magenta — maximum thinking power
+};
+
+const PRO_CONFIG_ROWS = ['reasoning', 'searchReasoning', 'persistence'] as const;
+type ProConfigRow = typeof PRO_CONFIG_ROWS[number];
 
 const TEMPERATURE_PRESETS = [0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.2, 1.5, 2.0];
 const TEMPERATURE_LABELS: Record<number, string> = {
@@ -71,11 +94,12 @@ const TEMPERATURE_LABELS: Record<number, string> = {
 const CONFIG_ROWS = ['temperature', 'reasoning', 'searchReasoning', 'persistence'] as const;
 type ConfigRow = typeof CONFIG_ROWS[number];
 
-const SEARCH_REASONING_LEVELS: Array<'low' | 'medium' | 'high'> = ['low', 'medium', 'high'];
+const SEARCH_REASONING_LEVELS: Array<'low' | 'medium' | 'high' | 'max'> = ['low', 'medium', 'high', 'max'];
 const SEARCH_REASONING_LABELS: Record<string, string> = {
   low: 'Fast snippets & links (~2-4s)',
   medium: 'Balanced search & overview (~6-10s)',
   high: 'Deep multi-page crawl & full synthesis (~15-20s)',
+  max: 'Exhaustive multi-source reasoning (~25-30s)',
 };
 
 export function getTempColor(temp: number): string {
@@ -100,14 +124,16 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
   const [hasAccessToProModel, setHasAccessToProModel] = useState<boolean>(
     () => !(config?.getProModelNoAccessSync() ?? false),
   );
-  const [view, setView] = useState<'main' | 'manual' | 'flash-config'>(() =>
+  const [view, setView] = useState<'main' | 'manual' | 'flash-config' | 'pro-config'>(() =>
     config?.getProModelNoAccessSync() ? 'manual' : 'main',
   );
   const [persistMode, setPersistMode] = useState(false);
   const [flashPersistMode, setFlashPersistMode] = useState(true);
+  const [proPersistMode, setProPersistMode] = useState(true);
 
-  // Currently focused row inside the flash-config subview
+  // Currently focused row inside the flash-config and pro-config subviews
   const [configRow, setConfigRow] = useState<ConfigRow>('temperature');
+  const [proConfigRow, setProConfigRow] = useState<ProConfigRow>('reasoning');
 
   // Temperature state (V4-Flash)
   const [temperature, setTemperatureState] = useState<number>(
@@ -119,9 +145,19 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
     () => config?.getReasoningEffort?.() ?? 'medium',
   );
 
+  // Reasoning effort state (V4-Pro thinking mode)
+  const [proReasoningEffort, setProReasoningEffortState] = useState<'low' | 'medium' | 'high' | 'max'>(
+    () => (config as any)?.getProReasoningEffort?.() ?? 'high',
+  );
+
   // Search reasoning effort state (WebSearch engine)
   const [searchReasoning, setSearchReasoningState] = useState<'low' | 'medium' | 'high'>(
     () => config?.getSearchReasoningEffort?.() ?? 'low',
+  );
+
+  // Search reasoning effort state for Pro
+  const [proSearchReasoning, setProSearchReasoningState] = useState<'low' | 'medium' | 'high' | 'max'>(
+    () => (config as any)?.getProSearchReasoningEffort?.() ?? 'high',
   );
 
   useEffect(() => {
@@ -150,6 +186,75 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
 
   useKeypress(
     (key) => {
+      // --- pro-config subview ---
+      if (view === 'pro-config') {
+        if (key.name === 'escape') {
+          setView('main');
+          return true;
+        }
+        if (key.name === 'up') {
+          setProConfigRow((prev) => {
+            const idx = PRO_CONFIG_ROWS.indexOf(prev);
+            return PRO_CONFIG_ROWS[Math.max(0, idx - 1)];
+          });
+          return true;
+        }
+        if (key.name === 'down') {
+          setProConfigRow((prev) => {
+            const idx = PRO_CONFIG_ROWS.indexOf(prev);
+            return PRO_CONFIG_ROWS[Math.min(PRO_CONFIG_ROWS.length - 1, idx + 1)];
+          });
+          return true;
+        }
+        if (key.name === 'left' || key.name === 'right' || key.name === 'tab') {
+          if (proConfigRow === 'persistence') {
+            setProPersistMode((prev) => {
+              const next = !prev;
+              (config as any)?.saveProSettings?.(next);
+              return next;
+            });
+            return true;
+          }
+        }
+        if (key.name === 'left') {
+          if (proConfigRow === 'reasoning') {
+            setProReasoningEffortState((prev) => {
+              const idx = PRO_REASONING_EFFORT_LEVELS.indexOf(prev);
+              const next = PRO_REASONING_EFFORT_LEVELS[Math.max(0, idx - 1)];
+              (config as any)?.setProReasoningEffort?.(next, proPersistMode);
+              return next;
+            });
+          } else if (proConfigRow === 'searchReasoning') {
+            setProSearchReasoningState((prev) => {
+              const idx = PRO_REASONING_EFFORT_LEVELS.indexOf(prev);
+              const next = PRO_REASONING_EFFORT_LEVELS[Math.max(0, idx - 1)];
+              (config as any)?.setProSearchReasoningEffort?.(next, proPersistMode);
+              return next;
+            });
+          }
+          return true;
+        }
+        if (key.name === 'right') {
+          if (proConfigRow === 'reasoning') {
+            setProReasoningEffortState((prev) => {
+              const idx = PRO_REASONING_EFFORT_LEVELS.indexOf(prev);
+              const next = PRO_REASONING_EFFORT_LEVELS[Math.min(PRO_REASONING_EFFORT_LEVELS.length - 1, idx + 1)];
+              (config as any)?.setProReasoningEffort?.(next, proPersistMode);
+              return next;
+            });
+          } else if (proConfigRow === 'searchReasoning') {
+            setProSearchReasoningState((prev) => {
+              const idx = PRO_REASONING_EFFORT_LEVELS.indexOf(prev);
+              const next = PRO_REASONING_EFFORT_LEVELS[Math.min(PRO_REASONING_EFFORT_LEVELS.length - 1, idx + 1)];
+              (config as any)?.setProSearchReasoningEffort?.(next, proPersistMode);
+              return next;
+            });
+          }
+          return true;
+        }
+        return false;
+      }
+
       // --- flash-config subview ---
       if (view === 'flash-config') {
         if (key.name === 'escape') {
@@ -198,7 +303,7 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
           } else if (configRow === 'searchReasoning') {
             setSearchReasoningState((prev) => {
               const idx = SEARCH_REASONING_LEVELS.indexOf(prev);
-              const next = SEARCH_REASONING_LEVELS[Math.max(0, idx - 1)];
+              const next = SEARCH_REASONING_LEVELS[Math.max(0, idx - 1)] as 'low' | 'medium' | 'high';
               config?.setSearchReasoningEffort?.(next, flashPersistMode);
               return next;
             });
@@ -223,7 +328,7 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
           } else if (configRow === 'searchReasoning') {
             setSearchReasoningState((prev) => {
               const idx = SEARCH_REASONING_LEVELS.indexOf(prev);
-              const next = SEARCH_REASONING_LEVELS[Math.min(SEARCH_REASONING_LEVELS.length - 1, idx + 1)];
+              const next = SEARCH_REASONING_LEVELS[Math.min(SEARCH_REASONING_LEVELS.length - 1, idx + 1)] as 'low' | 'medium' | 'high';
               config?.setSearchReasoningEffort?.(next, flashPersistMode);
               return next;
             });
@@ -287,13 +392,13 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
         {
           value: DEEPSEEK_CHAT_MODEL,
           title: 'DeepSeek-V4-Flash',
-          description: `Fast, efficient and cost-effective (1M context)  ·  t:${temperature.toFixed(1)}  r:${reasoningEffort}`,
+          description: `Fast, efficient and cost-effective (64k context)  ·  t:${temperature.toFixed(1)}  r:${reasoningEffort}`,
           key: DEEPSEEK_CHAT_MODEL,
         },
         {
           value: DEEPSEEK_REASONER_MODEL,
           title: 'DeepSeek-V4-Pro (Thinking)',
-          description: 'Superior performance with deep reasoning (1M context)',
+          description: `Superior performance with deep reasoning (64k context)  ·  r:${proReasoningEffort}`,
           key: DEEPSEEK_REASONER_MODEL,
         },
         {
@@ -301,6 +406,12 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
           title: 'Configure Flash Settings',
           description: 'Adjust temperature & reasoning effort for V4-Flash',
           key: DEEPSEEK_CONFIG_VALUE,
+        },
+        {
+          value: DEEPSEEK_PRO_CONFIG_VALUE,
+          title: 'Configure Pro Settings',
+          description: 'Adjust reasoning effort (low / high / max) for V4-Pro',
+          key: DEEPSEEK_PRO_CONFIG_VALUE,
         },
       ];
     }
@@ -372,6 +483,7 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
     hasAccessToProModel,
     temperature,
     reasoningEffort,
+    proReasoningEffort,
   ]);
 
   const manualOptions = useMemo(() => {
@@ -506,6 +618,10 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
         setView('flash-config');
         return;
       }
+      if (model === DEEPSEEK_PRO_CONFIG_VALUE) {
+        setView('pro-config');
+        return;
+      }
       if (model === 'Manual') {
         setView('manual');
         return;
@@ -519,6 +635,96 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
     },
     [config, onClose, persistMode],
   );
+
+  // ──────────────────────────────────────────────
+  // Pro Config subview
+  // ──────────────────────────────────────────────
+  if (view === 'pro-config') {
+    const effortIdx = PRO_REASONING_EFFORT_LEVELS.indexOf(proReasoningEffort);
+    const canEffortLeft = effortIdx > 0;
+    const canEffortRight = effortIdx < PRO_REASONING_EFFORT_LEVELS.length - 1;
+    const effortColor = PRO_REASONING_EFFORT_COLORS[proReasoningEffort] ?? '#f44336';
+
+    const searchEffortIdx = PRO_REASONING_EFFORT_LEVELS.indexOf(proSearchReasoning);
+    const canSearchEffortLeft = searchEffortIdx > 0;
+    const canSearchEffortRight = searchEffortIdx < PRO_REASONING_EFFORT_LEVELS.length - 1;
+    const searchEffortColor = PRO_REASONING_EFFORT_COLORS[proSearchReasoning] ?? '#f44336';
+
+    const isEffortFocused = proConfigRow === 'reasoning';
+    const isSearchFocused = proConfigRow === 'searchReasoning';
+    const isPersistFocused = proConfigRow === 'persistence';
+
+    return (
+      <Box
+        borderStyle="round"
+        borderColor={theme.border.default}
+        flexDirection="column"
+        padding={1}
+        width="100%"
+      >
+        <Text bold>Configure Pro Settings (DeepSeek-V4-Pro)</Text>
+        <Text color={theme.text.secondary}>Use up/down to switch row · left/right to change value · Esc to go back</Text>
+
+        <Box flexDirection="column" marginTop={1}>
+          {/* Model reasoning effort row */}
+          <Box>
+            <Text color={isEffortFocused ? theme.text.accent : theme.text.secondary}>
+              {isEffortFocused ? '▶ ' : '  '}
+            </Text>
+            <Text bold color={isEffortFocused ? theme.text.primary : theme.text.secondary}>
+              {'Model Reasoning:   '}
+            </Text>
+            <Text color={canEffortLeft && isEffortFocused ? theme.text.accent : theme.text.secondary}>◄ </Text>
+            <Text bold color={isEffortFocused ? effortColor : theme.text.secondary}>
+              {proReasoningEffort.toUpperCase()}
+            </Text>
+            <Text color={canEffortRight && isEffortFocused ? theme.text.accent : theme.text.secondary}> ►</Text>
+            <Text color={effortColor}>  {PRO_REASONING_EFFORT_LABELS[proReasoningEffort]}</Text>
+          </Box>
+
+          {/* Search reasoning effort row */}
+          <Box marginTop={0}>
+            <Text color={isSearchFocused ? theme.text.accent : theme.text.secondary}>
+              {isSearchFocused ? '▶ ' : '  '}
+            </Text>
+            <Text bold color={isSearchFocused ? theme.text.primary : theme.text.secondary}>
+              {'Search Reasoning:  '}
+            </Text>
+            <Text color={canSearchEffortLeft && isSearchFocused ? theme.text.accent : theme.text.secondary}>◄ </Text>
+            <Text bold color={isSearchFocused ? searchEffortColor : theme.text.secondary}>
+              {proSearchReasoning.toUpperCase()}
+            </Text>
+            <Text color={canSearchEffortRight && isSearchFocused ? theme.text.accent : theme.text.secondary}> ►</Text>
+            <Text color={searchEffortColor}>  {SEARCH_REASONING_LABELS[proSearchReasoning] ?? ''}</Text>
+          </Box>
+
+          {/* Persistence row */}
+          <Box marginTop={0}>
+            <Text color={isPersistFocused ? theme.text.accent : theme.text.secondary}>
+              {isPersistFocused ? '▶ ' : '  '}
+            </Text>
+            <Text bold color={isPersistFocused ? theme.text.primary : theme.text.secondary}>
+              {'Persistence:       '}
+            </Text>
+            <Text color={isPersistFocused ? theme.text.accent : theme.text.secondary}>◄ </Text>
+            <Text bold color={isPersistFocused ? (proPersistMode ? '#69f0ae' : '#ff9800') : theme.text.secondary}>
+              {proPersistMode ? 'PERMANENT' : 'SESSION ONLY'}
+            </Text>
+            <Text color={isPersistFocused ? theme.text.accent : theme.text.secondary}> ►</Text>
+            <Text color={isPersistFocused ? (proPersistMode ? '#69f0ae' : '#ff9800') : theme.text.secondary}>
+              {proPersistMode
+                ? '  Saved to disk (~/.deepseek/pro_settings.json)'
+                : '  Active in this conversation (resets on restart)'}
+            </Text>
+          </Box>
+        </Box>
+
+        <Box marginTop={1}>
+          <Text color={theme.text.secondary}>(Press Esc to go back)</Text>
+        </Box>
+      </Box>
+    );
+  }
 
   // ──────────────────────────────────────────────
   // Flash Config subview

@@ -2006,6 +2006,84 @@ export class Config implements McpContext, AgentLoopContext {
     } catch {}
   }
 
+  private _proReasoningEffort: 'low' | 'medium' | 'high' | 'max' = (() => {
+    try {
+      const stateDir = path.join(process.env['HOME'] || (process.env['USERPROFILE'] ?? '') || '/tmp', '.deepseek');
+      const file = path.join(stateDir, 'pro_settings.json');
+      if (fs.existsSync(file)) {
+        const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        if (data.reasoningEffort === 'low' || data.reasoningEffort === 'medium' || data.reasoningEffort === 'high' || data.reasoningEffort === 'max') {
+          return data.reasoningEffort;
+        }
+      }
+    } catch {}
+    return 'high';
+  })();
+
+  getProReasoningEffort(): 'low' | 'medium' | 'high' | 'max' {
+    return this._proReasoningEffort;
+  }
+
+  setProReasoningEffort(effort: 'low' | 'medium' | 'high' | 'max', persist: boolean = false): void {
+    this._proReasoningEffort = effort;
+    if (persist) {
+      this.saveProSettings(true);
+    }
+  }
+
+  private _proSearchReasoningEffort: 'low' | 'medium' | 'high' | 'max' = (() => {
+    try {
+      const stateDir = path.join(process.env['HOME'] || (process.env['USERPROFILE'] ?? '') || '/tmp', '.deepseek');
+      const file = path.join(stateDir, 'pro_settings.json');
+      if (fs.existsSync(file)) {
+        const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        if (data.searchReasoningEffort === 'low' || data.searchReasoningEffort === 'medium' || data.searchReasoningEffort === 'high' || data.searchReasoningEffort === 'max') {
+          return data.searchReasoningEffort;
+        }
+      }
+    } catch {}
+    return 'high';
+  })();
+
+  getProSearchReasoningEffort(): 'low' | 'medium' | 'high' | 'max' {
+    return this._proSearchReasoningEffort;
+  }
+
+  setProSearchReasoningEffort(effort: 'low' | 'medium' | 'high' | 'max', persist: boolean = false): void {
+    this._proSearchReasoningEffort = effort;
+    if (persist) {
+      this.saveProSettings(true);
+    }
+  }
+
+  saveProSettings(persist: boolean): void {
+    try {
+      const stateDir = path.join(process.env['HOME'] || (process.env['USERPROFILE'] ?? '') || '/tmp', '.deepseek');
+      const file = path.join(stateDir, 'pro_settings.json');
+      if (persist) {
+        fs.mkdirSync(stateDir, { recursive: true });
+        fs.writeFileSync(file, JSON.stringify({
+          reasoningEffort: this._proReasoningEffort,
+          searchReasoningEffort: this._proSearchReasoningEffort,
+        }, null, 2), 'utf-8');
+      }
+    } catch {}
+  }
+
+  private _assistantPrefix?: string;
+
+  getAssistantPrefix(): string | undefined {
+    return this._assistantPrefix;
+  }
+
+  setAssistantPrefix(prefix: string | undefined): void {
+    this._assistantPrefix = prefix;
+  }
+
+  clearAssistantPrefix(): void {
+    this._assistantPrefix = undefined;
+  }
+
   getDisableLoopDetection(): boolean {
     return this.disableLoopDetection ?? false;
   }

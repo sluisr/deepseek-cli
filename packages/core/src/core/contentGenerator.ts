@@ -311,9 +311,13 @@ export async function createContentGenerator(
     }
 
     if (config.authType === AuthType.USE_DEEPSEEK) {
+      const baseUrl =
+        config.baseUrl ||
+        process.env['DEEPSEEK_BASE_URL'] ||
+        'https://api.deepseek.com';
       const deepseekGen = new DeepSeekContentGenerator(
         config.apiKey || '',
-        config.baseUrl || 'https://api.deepseek.com/v1',
+        baseUrl,
         gcConfig,
       );
       return new LoggingContentGenerator(deepseekGen, gcConfig);

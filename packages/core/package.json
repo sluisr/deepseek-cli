@@ -1,11 +1,11 @@
 {
   "name": "@google/gemini-cli-core",
   "version": "0.54.4",
-  "description": "Gemini CLI Core",
+  "description": "DeepSeek CLI Core — adapted for DeepSeek CLI by sluisr",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/google-gemini/gemini-cli.git"
+    "url": "git+https://github.com/sluisr/deepseek-cli.git"
   },
   "type": "module",
   "main": "dist/index.js",

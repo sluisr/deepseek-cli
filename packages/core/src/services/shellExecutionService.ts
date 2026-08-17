@@ -18,6 +18,7 @@ import {
   resolveExecutable,
   type ShellType,
 } from '../utils/shell-utils.js';
+import { getOrInitAskPassScript } from '../utils/askpass.js';
 import { isBinary, truncateString } from '../utils/textUtils.js';
 import pkg from '@xterm/headless';
 import { debugLogger } from '../utils/debugLogger.js';
@@ -66,7 +67,7 @@ export const GEMINI_CLI_IDENTIFICATION_ENV_VAR_VALUE = '1';
 export const SCROLLBACK_LIMIT = 300000;
 
 const BASH_SHOPT_OPTIONS = 'promptvars nullglob extglob nocaseglob dotglob';
-const BASH_SHOPT_GUARD = `shopt -u ${BASH_SHOPT_OPTIONS};`;
+const BASH_SHOPT_GUARD = `shopt -u ${BASH_SHOPT_OPTIONS}; sudo() { if [ -n "$SUDO_ASKPASS" ]; then command sudo -A "$@"; else command sudo "$@"; fi; };`;
 
 function ensurePromptvarsDisabled(command: string, shell: ShellType): string {
   if (shell !== 'bash') {
@@ -74,7 +75,7 @@ function ensurePromptvarsDisabled(command: string, shell: ShellType): string {
   }
 
   const trimmed = command.trimStart();
-  if (trimmed.startsWith(BASH_SHOPT_GUARD)) {
+  if (trimmed.startsWith('shopt -u')) {
     return command;
   }
 
@@ -483,6 +484,8 @@ export class ShellExecutionService {
 
     const sanitizedEnv = sanitizeEnvironment(sourceEnv, sanitizationConfig);
 
+    const askPassScript = getOrInitAskPassScript();
+
     const baseEnv: Record<string, string | undefined> = {
       ...sanitizedEnv,
       [GEMINI_CLI_IDENTIFICATION_ENV_VAR]:
@@ -490,7 +493,18 @@ export class ShellExecutionService {
       TERM: 'xterm-256color',
       PAGER: shellExecutionConfig.pager ?? 'cat',
       GIT_PAGER: shellExecutionConfig.pager ?? 'cat',
+      SUDO_ASKPASS: askPassScript,
+      SSH_ASKPASS: askPassScript,
+      GIT_ASKPASS: askPassScript,
+      SUDO_ASKPASS_REQUIRE: 'force',
     };
+
+    sanitizationConfig.allowedEnvironmentVariables.push(
+      'SUDO_ASKPASS',
+      'SSH_ASKPASS',
+      'GIT_ASKPASS',
+      'SUDO_ASKPASS_REQUIRE',
+    );
 
     if (!isInteractive) {
       // Ensure all GIT_CONFIG_* variables are preserved even if they were redacted
@@ -511,8 +525,6 @@ export class ShellExecutionService {
 
       Object.assign(baseEnv, {
         GIT_TERMINAL_PROMPT: '0',
-        GIT_ASKPASS: '',
-        SSH_ASKPASS: '',
         GH_PROMPT_DISABLED: '1',
         GCM_INTERACTIVE: 'never',
         DISPLAY: '',
@@ -582,7 +594,7 @@ export class ShellExecutionService {
       const isBun = 'bun' in process.versions;
       const child = cpSpawn(finalExecutable, finalArgs, {
         cwd: finalCwd,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
         windowsVerbatimArguments: isWindows ? false : undefined,
         shell: false,
         detached: !isWindows && !isBun,

@@ -15,6 +15,8 @@ import { DEEPSEEK_CHAT_MODEL, DEEPSEEK_REASONER_MODEL } from '../../config/model
 import { debugLogger } from '../../utils/debugLogger.js';
 import type { LocalLiteRtLmClient } from '../../core/localLiteRtLmClient.js';
 
+import { loadDeepSeekApiKey } from '../../core/deepseekApiKeyStorage.js';
+
 // Threshold tuned to escalate to deepseek-v4-pro only for genuinely complex
 // tasks (architecture, broad refactors, multi-file debugging). v4-pro costs
 // ~5x more input and ~3x more output than v4-flash, plus thinking-mode
@@ -47,7 +49,8 @@ export class DeepSeekClassifierStrategy implements RoutingStrategy {
       return null;
     }
 
-    const apiKey = process.env['DEEPSEEK_API_KEY'];
+    const apiKey =
+      process.env['DEEPSEEK_API_KEY'] || (await loadDeepSeekApiKey());
     if (!apiKey) {
       return null;
     }
@@ -79,10 +82,6 @@ export class DeepSeekClassifierStrategy implements RoutingStrategy {
           max_tokens: 100,
           temperature: 0,
           stream: false,
-          // The classifier is a lightweight "score 1-100" task — no
-          // chain-of-thought needed. Disabling thinking mode skips
-          // `reasoning_content` generation entirely, halving the latency
-          // and cost of every routing decision.
           thinking: { type: 'disabled' },
         }),
         signal: context.signal,

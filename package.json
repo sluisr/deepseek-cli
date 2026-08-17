@@ -1,5 +1,5 @@
 {
-  "name": "@google/gemini-cli",
+  "name": "@sluisr/deepseek-cli",
   "version": "1.2.0",
   "engines": {
     "node": ">=20.0.0"
@@ -8,10 +8,11 @@
   "workspaces": [
     "packages/*"
   ],
-  "private": "true",
+  "description": "DeepSeek CLI — unofficial adaptation of DeepSeek CLI by sluisr",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/google-gemini/gemini-cli.git"
+    "url": "git+https://github.com/sluisr/deepseek-cli.git"
   },
   "config": {
     "sandboxImageUri": "us-docker.pkg.dev/gemini-code-dev/gemini-cli/sandbox:0.54.4"
@@ -87,7 +88,7 @@
     "cross-spawn": "7.0.6"
   },
   "bin": {
-    "gemini": "bundle/gemini.js"
+    "deepseek": "bundle/deepseek.js"
   },
   "files": [
     "bundle/",

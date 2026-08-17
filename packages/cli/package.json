@@ -1,16 +1,16 @@
 {
   "name": "@google/gemini-cli",
   "version": "1.2.0",
-  "description": "Gemini CLI",
+  "description": "DeepSeek CLI App — unofficial adaptation of DeepSeek CLI by sluisr",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/google-gemini/gemini-cli.git"
+    "url": "git+https://github.com/sluisr/deepseek-cli.git"
   },
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "gemini": "dist/index.js"
+    "deepseek": "dist/index.js"
   },
   "scripts": {
     "build": "node ../../scripts/build_package.js",

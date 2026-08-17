@@ -248,7 +248,7 @@ export class DeepSeekContentGenerator implements ContentGenerator {
         ? request.contents
         : [request.contents];
       let toolCallCounter = 0;
-      // Ordered list of pending (unmatched) tool calls; matched by name in FIFO order
+      // Ordered list of pending (unmatched) tool calls
       const pendingCalls: Array<{ name: string; id: string }> = [];
 
       for (const content of contents as any[]) {
@@ -263,6 +263,16 @@ export class DeepSeekContentGenerator implements ContentGenerator {
           const textParts = parts.filter(
             (p: any) => p.text && !p.thought && p.type !== 'thought',
           );
+
+          // If there were any unfulfilled pending tool calls from a previous model turn,
+          // cancel them with synthetic tool responses before starting a new model turn.
+          for (const pending of pendingCalls.splice(0)) {
+            messages.push({
+              role: 'tool',
+              tool_call_id: pending.id,
+              content: 'Tool call was cancelled by the user.',
+            });
+          }
 
           // Recovery strategy for `reasoning_content` (in priority order):
           //   1. `_deepseekReasoning` smuggled on a Part — survives the
@@ -317,7 +327,13 @@ export class DeepSeekContentGenerator implements ContentGenerator {
 
           // DeepSeek Reasoner requirement: If this is an assistant turn (especially with tool calls)
           // and the API requires reasoning_content, we must never send undefined when reasoning was used.
-          if (!reasoning_content && (fnCallParts.length > 0 || (request.model && (request.model.includes('reasoner') || request.model.includes('pro'))))) {
+          if (
+            !reasoning_content &&
+            (fnCallParts.length > 0 ||
+              (request.model &&
+                (request.model.includes('reasoner') ||
+                  request.model.includes('pro'))))
+          ) {
             reasoning_content = 'Thinking process completed.';
           }
 
@@ -332,45 +348,79 @@ export class DeepSeekContentGenerator implements ContentGenerator {
 
           if (fnCallParts.length > 0) {
             assistantMessage.tool_calls = fnCallParts.map((p: any) => {
-              const id = `call_${toolCallCounter++}`;
+              const id = p.functionCall.id || `call_${toolCallCounter++}`;
               pendingCalls.push({ name: p.functionCall.name, id });
+              const callArgs =
+                typeof p.functionCall.args === 'string'
+                  ? p.functionCall.args
+                  : JSON.stringify(p.functionCall.args ?? {});
               return {
                 id,
                 type: 'function',
                 function: {
                   name: p.functionCall.name,
-                  arguments: JSON.stringify(p.functionCall.args ?? {}),
+                  arguments: callArgs,
                 },
               };
             });
           }
           messages.push(assistantMessage);
         } else {
+          // role is 'user' (can carry tool responses and/or user text)
           const fnRespParts = parts.filter((p: any) => p.functionResponse);
           const textParts = parts.filter((p: any) => p.text);
+          const nonTextDescriptors = parts
+            .filter((p: any) => p.inlineData || p.fileData)
+            .map(
+              (p: any) =>
+                `[Attached file: ${p.inlineData?.mimeType || p.fileData?.mimeType || 'binary'}]`,
+            );
+
+          let text = textParts.map((p: any) => p.text).join('');
+          if (!text && nonTextDescriptors.length > 0) {
+            text = nonTextDescriptors.join(' ');
+          }
 
           if (fnRespParts.length > 0) {
             for (const p of fnRespParts) {
               const fnName = p.functionResponse.name;
-              // Match the first pending call with this name (FIFO)
-              const matchIdx = pendingCalls.findIndex((c) => c.name === fnName);
-              const toolCallId =
-                matchIdx >= 0
-                  ? pendingCalls.splice(matchIdx, 1)[0].id
-                  : `call_fb_${fnName}`;
-              const respContent =
-                typeof p.functionResponse.response === 'string'
-                  ? p.functionResponse.response
-                  : JSON.stringify(p.functionResponse.response ?? {});
-              messages.push({
-                role: 'tool',
-                tool_call_id: toolCallId,
-                content: respContent,
-              });
+              const respId = p.functionResponse.id;
+              // Match by ID first if present, then FIFO by name
+              let matchIdx = respId
+                ? pendingCalls.findIndex((c) => c.id === respId)
+                : -1;
+              if (matchIdx === -1) {
+                matchIdx = pendingCalls.findIndex((c) => c.name === fnName);
+              }
+
+              if (matchIdx >= 0) {
+                const toolCallId = pendingCalls.splice(matchIdx, 1)[0].id;
+                const respContent =
+                  typeof p.functionResponse.response === 'string'
+                    ? p.functionResponse.response
+                    : JSON.stringify(p.functionResponse.response ?? {});
+                messages.push({
+                  role: 'tool',
+                  tool_call_id: toolCallId,
+                  content: respContent,
+                });
+              } else {
+                debugLogger.warn(
+                  `[DeepSeek] Ignoring unmatched tool response for "${fnName}" (id: ${respId}) as no pending call exists.`,
+                );
+              }
             }
-            if (textParts.length > 0) {
-              const text = textParts.map((p: any) => p.text).join('');
-              if (text) messages.push({ role: 'user', content: text });
+
+            if (text) {
+              // Flush any remaining pending tool calls for the current assistant turn before user text
+              for (const pending of pendingCalls.splice(0)) {
+                messages.push({
+                  role: 'tool',
+                  tool_call_id: pending.id,
+                  content: 'Tool call was cancelled by the user.',
+                });
+              }
+              messages.push({ role: 'user', content: text });
             }
           } else {
             // Before adding a user message, flush any unanswered tool_calls with
@@ -382,10 +432,16 @@ export class DeepSeekContentGenerator implements ContentGenerator {
                 content: 'Tool call was cancelled by the user.',
               });
             }
-            messages.push({
-              role: 'user',
-              content: textParts.map((p: any) => p.text).join(''),
-            });
+            if (
+              text ||
+              messages.length === 0 ||
+              messages[messages.length - 1].role !== 'user'
+            ) {
+              messages.push({
+                role: 'user',
+                content: text,
+              });
+            }
           }
         }
       }
@@ -398,6 +454,10 @@ export class DeepSeekContentGenerator implements ContentGenerator {
           content: 'Tool call was cancelled by the user.',
         });
       }
+
+      // Final strict validation pass for DeepSeek/OpenAI schema:
+      // Ensure NO message with role 'tool' exists unless the preceding message is an assistant with tool_calls.
+      this.sanitizeToolCallSequences(messages);
     }
 
     const body: any = {
@@ -467,14 +527,151 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       if (request.config?.topP !== undefined) {
         body.top_p = request.config.topP;
       }
+    } else {
+      // Pro: send pro reasoning_effort (dynamic in real-time from config: low, medium, high, max)
+      const proEffort =
+        (this.config as any)?.getProReasoningEffort?.() ?? 'high';
+      body.reasoning_effort = proEffort;
+      body.thinking = { type: 'enabled' };
     }
-    // Pro: no temperature, no reasoning_effort — it always reasons deeply
 
     if (request.config?.maxOutputTokens !== undefined) {
       body.max_tokens = request.config.maxOutputTokens;
     }
 
+    // Thinking mode & reasoning effort configuration (DeepSeek V4-Pro & V4-Flash)
+    const isReasoner =
+      body.model.includes('reasoner') || body.model.includes('pro');
+    const thinkingConfig = request.config?.thinkingConfig;
+    const envReasoningEffort = process.env[
+      'DEEPSEEK_REASONING_EFFORT'
+    ]?.toLowerCase();
+    const explicitEffort =
+      (request.config as any)?.reasoning_effort ||
+      (request.config as any)?.reasoningEffort;
+
+    if (thinkingConfig?.thinkingBudget === 0) {
+      body.thinking = { type: 'disabled' };
+      delete body.reasoning_effort;
+    } else {
+      let effort: 'low' | 'high' | 'max' | undefined = undefined;
+
+      if (
+        explicitEffort &&
+        ['low', 'high', 'max', 'medium', 'xhigh'].includes(explicitEffort)
+      ) {
+        effort =
+          explicitEffort === 'low'
+            ? 'low'
+            : explicitEffort === 'max'
+              ? 'max'
+              : 'high';
+      } else if (
+        envReasoningEffort &&
+        ['low', 'high', 'max'].includes(envReasoningEffort)
+      ) {
+        effort = envReasoningEffort as 'low' | 'high' | 'max';
+      } else if (thinkingConfig?.thinkingLevel) {
+        const levelStr = String(thinkingConfig.thinkingLevel).toLowerCase();
+        if (levelStr.includes('low') || levelStr === 'minimal') {
+          effort = 'low';
+        } else if (levelStr.includes('max') || levelStr.includes('extreme')) {
+          effort = 'max';
+        } else {
+          effort = 'high';
+        }
+      } else if (
+        typeof thinkingConfig?.thinkingBudget === 'number' &&
+        thinkingConfig.thinkingBudget > 0
+      ) {
+        if (thinkingConfig.thinkingBudget <= 2048) {
+          effort = 'low';
+        } else if (thinkingConfig.thinkingBudget >= 16384) {
+          effort = 'max';
+        } else {
+          effort = 'high';
+        }
+      } else if (isReasoner) {
+        effort = 'high';
+      }
+
+      if (effort) {
+        body.reasoning_effort = effort;
+        body.thinking = { type: 'enabled' };
+      }
+    }
+
+    const pendingPrefix = (this.config as any)?.getAssistantPrefix?.();
+    if (pendingPrefix) {
+      body.messages.push({
+        role: 'assistant',
+        content: pendingPrefix,
+        prefix: true,
+      });
+      (this.config as any)?.clearAssistantPrefix?.();
+    }
+
     return body;
+  }
+
+  /**
+   * Strictly enforces OpenAI / DeepSeek format for tool messages:
+   * 1. Removes orphaned 'tool' messages that are not preceded by an assistant message with matching tool_calls id.
+   * 2. Ensures every assistant tool_call has a following 'tool' response.
+   */
+  private sanitizeToolCallSequences(messages: any[]): void {
+    let i = 0;
+    while (i < messages.length) {
+      const msg = messages[i];
+      if (msg.role === 'tool') {
+        let k = i - 1;
+        while (k >= 0 && messages[k].role === 'tool') {
+          k--;
+        }
+        const hasValidPrecedingCall =
+          k >= 0 &&
+          messages[k].role === 'assistant' &&
+          Array.isArray(messages[k].tool_calls) &&
+          messages[k].tool_calls.some((tc: any) => tc.id === msg.tool_call_id);
+
+        if (!hasValidPrecedingCall) {
+          debugLogger.warn(
+            `[DeepSeek] Removing orphaned tool message (tool_call_id: ${msg.tool_call_id})`,
+          );
+          messages.splice(i, 1);
+          continue;
+        }
+      }
+      i++;
+    }
+
+    for (let idx = 0; idx < messages.length; idx++) {
+      const msg = messages[idx];
+      if (
+        msg.role === 'assistant' &&
+        Array.isArray(msg.tool_calls) &&
+        msg.tool_calls.length > 0
+      ) {
+        const followingToolResponses: string[] = [];
+        let nextIdx = idx + 1;
+        while (nextIdx < messages.length && messages[nextIdx].role === 'tool') {
+          followingToolResponses.push(messages[nextIdx].tool_call_id);
+          nextIdx++;
+        }
+
+        for (const tc of msg.tool_calls) {
+          if (!followingToolResponses.includes(tc.id)) {
+            messages.splice(nextIdx, 0, {
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: 'Tool call was cancelled by the user.',
+            });
+            followingToolResponses.push(tc.id);
+            nextIdx++;
+          }
+        }
+      }
+    }
   }
 
   private mapDeepSeekToGoogle(deepseekResponse: any): GenerateContentResponse {
@@ -595,14 +792,22 @@ export class DeepSeekContentGenerator implements ContentGenerator {
   ): Promise<GenerateContentResponse> {
     const body = this.mapGoogleToDeepSeek(request);
 
+    const hasPrefix =
+      Array.isArray(body.messages) &&
+      body.messages.length > 0 &&
+      body.messages[body.messages.length - 1]?.prefix === true;
+    const endpointUrl = hasPrefix
+      ? 'https://api.deepseek.com/beta/chat/completions'
+      : `${this.baseUrl}/chat/completions`;
+
     debugLogger.debug(
-      `[DeepSeek] Sending request to ${this.baseUrl}/chat/completions`,
+      `[DeepSeek] Sending request to ${endpointUrl}`,
     );
 
     debugAppend(
       `--- REQUEST AT ${new Date().toISOString()} ---\n${JSON.stringify(body, null, 2)}\n\n`,
     );
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const response = await fetch(endpointUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -636,10 +841,18 @@ export class DeepSeekContentGenerator implements ContentGenerator {
     body.stream_options = { include_usage: true };
     const self = this;
 
+    const hasStreamPrefix =
+      Array.isArray(body.messages) &&
+      body.messages.length > 0 &&
+      body.messages[body.messages.length - 1]?.prefix === true;
+    const streamEndpointUrl = hasStreamPrefix
+      ? 'https://api.deepseek.com/beta/chat/completions'
+      : `${this.baseUrl}/chat/completions`;
+
     debugAppend(
       `--- STREAM REQUEST AT ${new Date().toISOString()} ---\n${JSON.stringify(body, null, 2)}\n\n`,
     );
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const response = await fetch(streamEndpointUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -671,6 +884,7 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       let hasToolCalls = false;
       let fullReasoning = '';
       let fullText = '';
+      let latestUsage: any = undefined;
 
       while (true) {
         const { done, value } = await reader!.read();
@@ -685,9 +899,34 @@ export class DeepSeekContentGenerator implements ContentGenerator {
           if (!trimmed || trimmed === 'data: [DONE]') continue;
 
           if (trimmed.startsWith('data: ')) {
-            const json = JSON.parse(trimmed.substring(6));
+            let json: any;
+            try {
+              json = JSON.parse(trimmed.substring(6));
+            } catch {
+              continue;
+            }
+
+            if (json.usage) {
+              latestUsage = json.usage;
+              logCacheStats('stream', json.usage);
+            }
+
             const choice = json.choices?.[0];
-            if (!choice) continue;
+            if (!choice) {
+              // Yield usage metadata if delivered as standalone final chunk
+              if (json.usage) {
+                yield {
+                  candidates: [],
+                  usageMetadata: {
+                    promptTokenCount: json.usage.prompt_tokens,
+                    candidatesTokenCount: json.usage.completion_tokens,
+                    totalTokenCount: json.usage.total_tokens,
+                    cachedContentTokenCount: json.usage.prompt_cache_hit_tokens,
+                  },
+                } as unknown as GenerateContentResponse;
+              }
+              continue;
+            }
 
             const delta = choice.delta ?? {};
             const deltaContent = delta.content;
@@ -787,6 +1026,7 @@ export class DeepSeekContentGenerator implements ContentGenerator {
                 }
               }
 
+              const usageToInclude = json.usage || latestUsage;
               const finalChunk: any = {
                 candidates: [
                   {
@@ -799,22 +1039,18 @@ export class DeepSeekContentGenerator implements ContentGenerator {
                     finishReason: 'STOP',
                   },
                 ],
-                ...(json.usage
+                ...(usageToInclude
                   ? {
                       usageMetadata: {
-                        promptTokenCount: json.usage.prompt_tokens,
-                        candidatesTokenCount: json.usage.completion_tokens,
-                        totalTokenCount: json.usage.total_tokens,
+                        promptTokenCount: usageToInclude.prompt_tokens,
+                        candidatesTokenCount: usageToInclude.completion_tokens,
+                        totalTokenCount: usageToInclude.total_tokens,
                         cachedContentTokenCount:
-                          json.usage.prompt_cache_hit_tokens,
+                          usageToInclude.prompt_cache_hit_tokens,
                       },
                     }
                   : {}),
               };
-
-              if (json.usage) {
-                logCacheStats('stream', json.usage);
-              }
 
               if (fnCalls.length > 0) {
                 finalChunk.functionCalls = fnCalls;

@@ -21,6 +21,7 @@ import {
 import { aboutCommand } from '../ui/commands/aboutCommand.js';
 import { agentsCommand } from '../ui/commands/agentsCommand.js';
 import { authCommand } from '../ui/commands/authCommand.js';
+import { balanceCommand } from '../ui/commands/balanceCommand.js';
 import { bugCommand } from '../ui/commands/bugCommand.js';
 import { bugMemoryCommand } from '../ui/commands/bugMemoryCommand.js';
 import { chatCommand, debugCommand } from '../ui/commands/chatCommand.js';
@@ -32,6 +33,7 @@ import { corgiCommand } from '../ui/commands/corgiCommand.js';
 import { docsCommand } from '../ui/commands/docsCommand.js';
 import { exportSessionCommand } from '../ui/commands/exportSessionCommand.js';
 import { fimCommand } from '../ui/commands/fimCommand.js';
+import { prefixCommand } from '../ui/commands/prefixCommand.js';
 import { directoryCommand } from '../ui/commands/directoryCommand.js';
 import { editorCommand } from '../ui/commands/editorCommand.js';
 import { extensionsCommand } from '../ui/commands/extensionsCommand.js';
@@ -41,6 +43,7 @@ import { shortcutsCommand } from '../ui/commands/shortcutsCommand.js';
 import { rewindCommand } from '../ui/commands/rewindCommand.js';
 import { hooksCommand } from '../ui/commands/hooksCommand.js';
 import { ideCommand } from '../ui/commands/ideCommand.js';
+import { infoCommand } from '../ui/commands/infoCommand.js';
 import { initCommand } from '../ui/commands/initCommand.js';
 import { mcpCommand } from '../ui/commands/mcpCommand.js';
 import { memoryCommand } from '../ui/commands/memoryCommand.js';
@@ -125,6 +128,7 @@ export class BuiltinCommandLoader implements ICommandLoader {
       aboutCommand,
       ...(this.config?.isAgentsEnabled() ? [agentsCommand] : []),
       authCommand,
+      balanceCommand,
       bugCommand,
       bugMemoryCommand,
       {
@@ -139,6 +143,7 @@ export class BuiltinCommandLoader implements ICommandLoader {
       docsCommand,
       exportSessionCommand,
       fimCommand,
+      prefixCommand,
       directoryCommand,
       editorCommand,
       ...(this.config?.getExtensionsEnabled() === false
@@ -168,6 +173,7 @@ export class BuiltinCommandLoader implements ICommandLoader {
       ...(this.config?.getEnableHooksUI() ? [hooksCommand] : []),
       rewindCommand,
       await ideCommand(),
+      infoCommand,
       initCommand,
       ...(isNightlyBuild ? [oncallCommand] : []),
       ...(this.config?.getMcpEnabled() === false

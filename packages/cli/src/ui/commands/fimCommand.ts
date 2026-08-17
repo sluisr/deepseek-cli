@@ -1,7 +1,7 @@
 /**
  * @license
  * Copyright 2026 Google LLC
- * Copyright 2026 DeepSeek CLI Team
+ * Copyright 2026 sluisr
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,7 +13,10 @@ import {
   type SlashCommand,
 } from './types.js';
 import { MessageType } from '../types.js';
-import { resolveDefensiveToolPath } from '@google/gemini-cli-core';
+import {
+  resolveDefensiveToolPath,
+  loadDeepSeekApiKey,
+} from '@google/gemini-cli-core';
 
 export const fimCommand: SlashCommand = {
   name: 'fim',
@@ -89,11 +92,14 @@ Or specify a line number to insert code at:
       return;
     }
 
-    const apiKey = config?.getContentGeneratorConfig()?.apiKey || process.env['DEEPSEEK_API_KEY'];
+    const apiKey =
+      config?.getContentGeneratorConfig()?.apiKey ||
+      process.env['DEEPSEEK_API_KEY'] ||
+      (await loadDeepSeekApiKey());
     if (!apiKey) {
       context.ui.addItem({
         type: MessageType.ERROR,
-        text: 'Missing DeepSeek API key for FIM completion.',
+        text: 'Missing DeepSeek API key for FIM completion. Set DEEPSEEK_API_KEY or authenticate.',
       });
       return;
     }
