@@ -1,6 +1,6 @@
 {
   "name": "@sluisr/deepseek-cli",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -8,7 +8,27 @@
   "workspaces": [
     "packages/*"
   ],
-  "description": "DeepSeek CLI — unofficial adaptation of DeepSeek CLI by sluisr",
+  "description": "DeepSeek CLI — Open-source autonomous AI coding agent in your terminal powered by DeepSeek API",
+  "keywords": [
+    "deepseek",
+    "deepseek-cli",
+    "ai",
+    "cli",
+    "coding-assistant",
+    "autonomous-agent",
+    "developer-tools",
+    "reasoning",
+    "mcp",
+    "terminal",
+    "copilot",
+    "cursor-alternative",
+    "sluisr"
+  ],
+  "author": "sluisr <contact@sluisr.com> (https://sluisr.com/)",
+  "homepage": "https://github.com/sluisr/deepseek-cli#readme",
+  "bugs": {
+    "url": "https://github.com/sluisr/deepseek-cli/issues"
+  },
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
