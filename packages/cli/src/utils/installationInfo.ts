@@ -119,14 +119,12 @@ export function getInstallationInfo(
 
     // Check for Volta
     if (realPath.includes('/.volta/') || realPath.includes('/Volta/')) {
-      const updateCommand = 'volta install @google/gemini-cli@latest';
+      const updateCommand = 'volta install @sluisr/deepseek-cli@latest';
       return {
         packageManager: PackageManager.VOLTA,
         isGlobal: true,
         updateCommand,
-        updateMessage: isAutoUpdateEnabled
-          ? 'Installed with Volta. Attempting to automatically update now...'
-          : `Please run ${updateCommand} to update`,
+        updateMessage: `Run ${updateCommand} to update`,
       };
     }
 
@@ -137,9 +135,7 @@ export function getInstallationInfo(
         packageManager: PackageManager.PNPM,
         isGlobal: true,
         updateCommand,
-        updateMessage: isAutoUpdateEnabled
-          ? 'Installed with pnpm. Attempting to automatically update now...'
-          : `Please run ${updateCommand} to update`,
+        updateMessage: `Run ${updateCommand} to update`,
       };
     }
 
@@ -150,9 +146,7 @@ export function getInstallationInfo(
         packageManager: PackageManager.YARN,
         isGlobal: true,
         updateCommand,
-        updateMessage: isAutoUpdateEnabled
-          ? 'Installed with yarn. Attempting to automatically update now...'
-          : `Please run ${updateCommand} to update`,
+        updateMessage: `Run ${updateCommand} to update`,
       };
     }
 
@@ -170,9 +164,7 @@ export function getInstallationInfo(
         packageManager: PackageManager.BUN,
         isGlobal: true,
         updateCommand,
-        updateMessage: isAutoUpdateEnabled
-          ? 'Installed with bun. Attempting to automatically update now...'
-          : `Please run ${updateCommand} to update`,
+        updateMessage: `Run ${updateCommand} to update`,
       };
     }
 
@@ -203,9 +195,7 @@ export function getInstallationInfo(
       packageManager: PackageManager.NPM,
       isGlobal: true,
       updateCommand,
-      updateMessage: isAutoUpdateEnabled
-        ? 'Installed with npm. Attempting to automatically update now...'
-        : `Please run ${updateCommand} to update`,
+      updateMessage: `Run ${updateCommand} to update`,
     };
   } catch (error) {
     debugLogger.log(error);

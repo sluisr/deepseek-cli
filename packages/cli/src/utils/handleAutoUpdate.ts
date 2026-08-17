@@ -107,83 +107,12 @@ export function handleAutoUpdate(
     combinedMessage += `\n${installationInfo.updateMessage}`;
   }
 
-  if (
-    !installationInfo.updateCommand ||
-    !settings.merged.general.enableAutoUpdate
-  ) {
-    updateEventEmitter.emit('update-received', {
-      ...info,
-      message: combinedMessage,
-      isUpdating: false,
-    });
-    return;
-  }
   updateEventEmitter.emit('update-received', {
     ...info,
     message: combinedMessage,
-    isUpdating: true,
+    isUpdating: false,
   });
-  if (_updateInProgress) {
-    return;
-  }
-
-  const currentVersion = info.update.current;
-  if (!currentVersion) {
-    debugLogger.warn(
-      'Update check: current version is missing. Skipping automatic update for safety.',
-    );
-    return;
-  }
-
-  const currentChannel = getChannelFromVersion(currentVersion);
-  const targetChannel = getChannelFromVersion(info.update.latest);
-
-  // Defense-in-depth: prevent updates to a less stable channel
-  if (
-    RELEASE_CHANNEL_STABILITY[targetChannel] <
-    RELEASE_CHANNEL_STABILITY[currentChannel]
-  ) {
-    return;
-  }
-
-  const isNightly = info.update.latest.includes('nightly');
-
-  const updateCommand = installationInfo.updateCommand.replace(
-    '@latest',
-    isNightly ? '@nightly' : `@${info.update.latest}`,
-  );
-  const updateProcess = spawnFn(updateCommand, {
-    stdio: 'ignore',
-    shell: true,
-    detached: true,
-  });
-
-  _updateInProgress = true;
-
-  // Un-reference the child process to allow the parent to exit independently.
-  updateProcess.unref();
-
-  updateProcess.on('close', (code) => {
-    _updateInProgress = false;
-    if (code === 0) {
-      updateEventEmitter.emit('update-success', {
-        message:
-          'Update successful! The new version will be used on your next run.',
-      });
-    } else {
-      updateEventEmitter.emit('update-failed', {
-        message: `Automatic update failed. Please try updating manually:\n\n${updateCommand}`,
-      });
-    }
-  });
-
-  updateProcess.on('error', (err) => {
-    _updateInProgress = false;
-    updateEventEmitter.emit('update-failed', {
-      message: `Automatic update failed. Please try updating manually. (error: ${err.message})\n\n${updateCommand}`,
-    });
-  });
-  return updateProcess;
+  return;
 }
 
 export function setUpdateHandler(
