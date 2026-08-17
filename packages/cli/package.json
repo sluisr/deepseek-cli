@@ -1,6 +1,6 @@
 {
   "name": "@google/gemini-cli",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "DeepSeek CLI App — unofficial adaptation of DeepSeek CLI by sluisr",
   "license": "Apache-2.0",
   "repository": {
