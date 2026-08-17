@@ -15,6 +15,7 @@ import {
   checkExhaustive,
   AuthType,
   UserAccountManager,
+  DEEPSEEK_CHAT_MODEL,
 } from '@google/gemini-cli-core';
 import { ConsoleSummaryDisplay } from './ConsoleSummaryDisplay.js';
 import process from 'node:process';
@@ -323,13 +324,50 @@ export const Footer: React.FC = () => {
         break;
       }
       case 'model-name': {
+        const isDeepSeekFlash = model === DEEPSEEK_CHAT_MODEL;
+        const temperature = config.getTemperature?.();
+        const reasoningEffort = config.getReasoningEffort?.();
         const str = getDisplayString(model);
-        addCol(
-          id,
-          header,
-          () => <Text color={itemColor}>{str}</Text>,
-          str.length,
-        );
+        // For V4-Flash: show t: · r: to the LEFT of the model name with dynamic thermal colors
+        if (isDeepSeekFlash && temperature !== undefined && reasoningEffort) {
+          const tempStr = temperature.toFixed(1);
+          const fullStr = `t:${tempStr} · r:${reasoningEffort} · ${str}`;
+          const tempColor =
+            temperature <= 0.2
+              ? '#4fc3f7'
+              : temperature <= 0.5
+                ? '#69f0ae'
+                : temperature <= 1.0
+                  ? '#ffd54f'
+                  : temperature <= 1.5
+                    ? '#ff9800'
+                    : '#f44336';
+          addCol(
+            id,
+            header,
+            () => (
+              <Box>
+                <Text color={theme.text.secondary}>{'t:'}</Text>
+                <Text color={tempColor}>{tempStr}</Text>
+                <Text color={theme.text.secondary}>{' · r:'}</Text>
+                <Text color={
+                  reasoningEffort === 'low' ? '#69f0ae' :
+                  reasoningEffort === 'medium' ? '#ff9800' : '#f44336'
+                }>{reasoningEffort}</Text>
+                <Text color={theme.text.secondary}>{' · '}</Text>
+                <Text color={itemColor}>{str}</Text>
+              </Box>
+            ),
+            fullStr.length,
+          );
+        } else {
+          addCol(
+            id,
+            header,
+            () => <Text color={itemColor}>{str}</Text>,
+            str.length,
+          );
+        }
         break;
       }
       case 'context-used': {

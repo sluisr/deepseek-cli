@@ -139,7 +139,11 @@ const saveCommand: SlashCommand = {
     const history = chat.getHistory();
     if (history.length > INITIAL_HISTORY_LENGTH) {
       const authType = config?.getContentGeneratorConfig()?.authType;
-      await logger.saveCheckpoint({ history, authType }, tag);
+      const temperature = config?.getTemperature?.();
+      const reasoningEffort = config?.getReasoningEffort?.();
+      const searchReasoningEffort = config?.getSearchReasoningEffort?.();
+      const model = config?.getModel?.();
+      await logger.saveCheckpoint({ history, authType, model, temperature, reasoningEffort, searchReasoningEffort }, tag);
       return {
         type: 'message',
         messageType: 'info',
@@ -150,8 +154,8 @@ const saveCommand: SlashCommand = {
     } else {
       return {
         type: 'message',
-        messageType: 'info',
-        content: 'No conversation found to save.',
+        messageType: 'error',
+        content: 'No conversation history to save.',
       };
     }
   },
@@ -186,6 +190,20 @@ const resumeCheckpointCommand: SlashCommand = {
         messageType: 'info',
         content: `No saved checkpoint found with tag: ${decodeTagName(tag)}.`,
       };
+    }
+
+    // Restore temperature and reasoning effort associated with this specific chat
+    if (checkpoint.temperature !== undefined) {
+      config?.setTemperature?.(checkpoint.temperature, false);
+    }
+    if (checkpoint.reasoningEffort) {
+      config?.setReasoningEffort?.(checkpoint.reasoningEffort, false);
+    }
+    if (checkpoint.searchReasoningEffort) {
+      config?.setSearchReasoningEffort?.(checkpoint.searchReasoningEffort, false);
+    }
+    if (checkpoint.model) {
+      config?.setModel?.(checkpoint.model, true);
     }
 
     const currentAuthType = config?.getContentGeneratorConfig()?.authType;

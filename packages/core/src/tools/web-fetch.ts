@@ -37,6 +37,7 @@ import { WEB_FETCH_DEFINITION } from './definitions/coreTools.js';
 import { resolveToolDeclaration } from './definitions/resolver.js';
 import { LRUCache } from 'mnemonist';
 import type { AgentLoopContext } from '../config/agent-loop-context.js';
+import { AuthType } from '../core/contentGenerator.js';
 
 const URL_FETCH_TIMEOUT_MS = 10000;
 const MAX_CONTENT_LENGTH = 250000;
@@ -763,7 +764,11 @@ Response: ${rawResponseText}`;
   }
 
   async execute({ abortSignal: signal }: ExecuteOptions): Promise<ToolResult> {
-    if (this.context.config.getDirectWebFetch()) {
+    const isDeepSeekAuth =
+      this.context.config?.getContentGeneratorConfig()?.authType ===
+      AuthType.USE_DEEPSEEK;
+
+    if (this.context.config.getDirectWebFetch() || isDeepSeekAuth) {
       return this.executeExperimental(signal);
     }
     const userPrompt = this.params.prompt!;

@@ -38,6 +38,7 @@ import { RipGrepTool, resolveRipgrepPath } from '../tools/ripGrep.js';
 import { GlobTool } from '../tools/glob.js';
 import { ActivateSkillTool } from '../tools/activate-skill.js';
 import { EditTool } from '../tools/edit.js';
+import { ApplyPatchTool } from '../tools/apply-patch.js';
 import { ShellTool } from '../tools/shell.js';
 import { WriteFileTool } from '../tools/write-file.js';
 import { WebFetchTool } from '../tools/web-fetch.js';
@@ -1915,6 +1916,94 @@ export class Config implements McpContext, AgentLoopContext {
 
   getModel(): string {
     return this.model;
+  }
+
+  private _temperature: number = (() => {
+    try {
+      const stateDir = path.join(process.env['HOME'] || (process.env['USERPROFILE'] ?? '') || '/tmp', '.deepseek');
+      const file = path.join(stateDir, 'flash_settings.json');
+      if (fs.existsSync(file)) {
+        const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        if (typeof data.temperature === 'number') return data.temperature;
+      }
+    } catch {}
+    return 1.0;
+  })();
+
+  getTemperature(): number {
+    return this._temperature;
+  }
+
+  setTemperature(temp: number, persist: boolean = false): void {
+    this._temperature = Math.max(0.0, Math.min(2.0, Number(temp.toFixed(2))));
+    if (persist) {
+      this.saveFlashSettings(true);
+    }
+  }
+
+  private _reasoningEffort: 'low' | 'medium' | 'high' = (() => {
+    try {
+      const stateDir = path.join(process.env['HOME'] || (process.env['USERPROFILE'] ?? '') || '/tmp', '.deepseek');
+      const file = path.join(stateDir, 'flash_settings.json');
+      if (fs.existsSync(file)) {
+        const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        if (data.reasoningEffort === 'low' || data.reasoningEffort === 'medium' || data.reasoningEffort === 'high') {
+          return data.reasoningEffort;
+        }
+      }
+    } catch {}
+    return 'medium';
+  })();
+
+  getReasoningEffort(): 'low' | 'medium' | 'high' {
+    return this._reasoningEffort;
+  }
+
+  setReasoningEffort(effort: 'low' | 'medium' | 'high', persist: boolean = false): void {
+    this._reasoningEffort = effort;
+    if (persist) {
+      this.saveFlashSettings(true);
+    }
+  }
+
+  private _searchReasoningEffort: 'low' | 'medium' | 'high' = (() => {
+    try {
+      const stateDir = path.join(process.env['HOME'] || (process.env['USERPROFILE'] ?? '') || '/tmp', '.deepseek');
+      const file = path.join(stateDir, 'flash_settings.json');
+      if (fs.existsSync(file)) {
+        const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        if (data.searchReasoningEffort === 'low' || data.searchReasoningEffort === 'medium' || data.searchReasoningEffort === 'high') {
+          return data.searchReasoningEffort;
+        }
+      }
+    } catch {}
+    return 'low';
+  })();
+
+  getSearchReasoningEffort(): 'low' | 'medium' | 'high' {
+    return this._searchReasoningEffort;
+  }
+
+  setSearchReasoningEffort(effort: 'low' | 'medium' | 'high', persist: boolean = false): void {
+    this._searchReasoningEffort = effort;
+    if (persist) {
+      this.saveFlashSettings(true);
+    }
+  }
+
+  saveFlashSettings(persist: boolean): void {
+    try {
+      const stateDir = path.join(process.env['HOME'] || (process.env['USERPROFILE'] ?? '') || '/tmp', '.deepseek');
+      const file = path.join(stateDir, 'flash_settings.json');
+      if (persist) {
+        fs.mkdirSync(stateDir, { recursive: true });
+        fs.writeFileSync(file, JSON.stringify({
+          temperature: this._temperature,
+          reasoningEffort: this._reasoningEffort,
+          searchReasoningEffort: this._searchReasoningEffort,
+        }, null, 2), 'utf-8');
+      }
+    } catch {}
   }
 
   getDisableLoopDetection(): boolean {
@@ -3987,6 +4076,9 @@ export class Config implements McpContext, AgentLoopContext {
     );
     maybeRegister(EditTool, () =>
       registry.registerTool(new EditTool(this, this.messageBus)),
+    );
+    maybeRegister(ApplyPatchTool, () =>
+      registry.registerTool(new ApplyPatchTool(this, this.messageBus)),
     );
     maybeRegister(WriteFileTool, () =>
       registry.registerTool(new WriteFileTool(this, this.messageBus)),

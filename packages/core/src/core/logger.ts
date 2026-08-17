@@ -29,6 +29,10 @@ export interface LogEntry {
 export interface Checkpoint {
   history: readonly Content[];
   authType?: AuthType;
+  model?: string;
+  temperature?: number;
+  reasoningEffort?: 'low' | 'medium' | 'high';
+  searchReasoningEffort?: 'low' | 'medium' | 'high';
 }
 
 // This regex matches any character that is NOT a letter (a-z, A-Z),

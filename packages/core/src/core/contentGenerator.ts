@@ -311,10 +311,12 @@ export async function createContentGenerator(
     }
 
     if (config.authType === AuthType.USE_DEEPSEEK) {
-      return new LoggingContentGenerator(
-        new DeepSeekContentGenerator(config.apiKey || '', config.baseUrl || 'https://api.deepseek.com/v1'),
-        gcConfig
+      const deepseekGen = new DeepSeekContentGenerator(
+        config.apiKey || '',
+        config.baseUrl || 'https://api.deepseek.com/v1',
+        gcConfig,
       );
+      return new LoggingContentGenerator(deepseekGen, gcConfig);
     }
     if (
       config.authType === AuthType.LOGIN_WITH_GOOGLE ||

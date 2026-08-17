@@ -90,15 +90,19 @@ TOOL USAGE RULES (mandatory):
 - run_shell_command can access ANY path on the filesystem, not just the current workspace. Never refuse to check a path outside the workspace — just run the shell command.`;
 
 const TOOL_HINTS: Record<string, string> = {
+  apply_patch:
+    ' [PREFERRED for fast unified diff patching of existing files — use this for code edits]',
   list_directory:
     ' [PREFERRED for listing directory contents — use this instead of run_shell_command with ls]',
   read_file:
     ' [PREFERRED for reading file contents — use this instead of run_shell_command with cat]',
   write_file:
-    ' [PREFERRED for writing files — use this instead of run_shell_command with echo/tee]',
+    ' [PREFERRED for writing new files — use this instead of run_shell_command with echo/tee]',
   glob: ' [PREFERRED for finding files by pattern — use this instead of run_shell_command with find]',
   search_file_content:
     ' [PREFERRED for searching text in files — use this instead of run_shell_command with grep]',
+  web_search:
+    ' [PREFERRED for finding real-time information, documentation, and current web content]',
   run_shell_command:
     ' [USE ONLY when no other specific tool covers the task — prefer list_directory, read_file, glob, or search_file_content first]',
 };
@@ -150,9 +154,14 @@ export class DeepSeekContentGenerator implements ContentGenerator {
     }
   }
 
+  // Runtime fallback overrides set when Config is not provided
+  temperature: number = 1.0;
+  reasoningEffort: 'low' | 'medium' | 'high' = 'medium';
+
   constructor(
     private readonly apiKey: string,
     private readonly baseUrl: string = 'https://api.deepseek.com',
+    private readonly config?: any,
   ) {
     DeepSeekContentGenerator.loadCache();
   }
@@ -434,13 +443,32 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       body.response_format = { type: 'json_object' };
     }
 
-    if (request.config?.temperature !== undefined) {
-      body.temperature = request.config.temperature;
-    }
+    // Apply temperature and reasoning_effort correctly per model:
+    // - V4-Flash (deepseek-chat): supports temperature AND reasoning_effort (thinking mode)
+    // - V4-Pro (deepseek-reasoner): always-on deep reasoning, no extra params
+    const resolvedModel = this.resolveDeepSeekModel(request.model);
+    const isProModel =
+      resolvedModel.includes('pro') || resolvedModel.includes('reasoner');
 
-    if (request.config?.topP !== undefined) {
-      body.top_p = request.config.topP;
+    if (!isProModel) {
+      // Flash: send temperature (dynamic in real-time from config or request config)
+      const currentTemp = this.config?.getTemperature?.() ?? this.temperature;
+      const temp =
+        request.config?.temperature !== undefined
+          ? request.config.temperature
+          : currentTemp;
+      body.temperature = temp;
+
+      // Flash: send reasoning_effort (dynamic in real-time from config)
+      const currentEffort =
+        this.config?.getReasoningEffort?.() ?? this.reasoningEffort;
+      body.reasoning_effort = currentEffort;
+
+      if (request.config?.topP !== undefined) {
+        body.top_p = request.config.topP;
+      }
     }
+    // Pro: no temperature, no reasoning_effort — it always reasons deeply
 
     if (request.config?.maxOutputTokens !== undefined) {
       body.max_tokens = request.config.maxOutputTokens;

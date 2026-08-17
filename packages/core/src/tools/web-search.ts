@@ -24,6 +24,7 @@ import { WEB_SEARCH_DEFINITION } from './definitions/coreTools.js';
 import { resolveToolDeclaration } from './definitions/resolver.js';
 import { LlmRole } from '../telemetry/llmRole.js';
 import type { AgentLoopContext } from '../config/agent-loop-context.js';
+import { AuthType } from '../core/contentGenerator.js';
 
 interface GroundingChunkWeb {
   uri?: string;
@@ -88,6 +89,163 @@ class WebSearchToolInvocation extends BaseToolInvocation<
   async execute({
     abortSignal: signal,
   }: ExecuteOptions): Promise<WebSearchToolResult> {
+    const config = this.context.config;
+    const isDeepSeekAuth =
+      config?.getContentGeneratorConfig()?.authType === AuthType.USE_DEEPSEEK;
+
+    // When running on DeepSeek API: use native DeepSeek Responses web_search engine
+    if (isDeepSeekAuth) {
+      const query = this.params.query;
+      const apiKey =
+        config?.getContentGeneratorConfig()?.apiKey ||
+        process.env['DEEPSEEK_API_KEY'];
+
+      if (apiKey) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 25000);
+          const combinedSignal = signal
+            ? AbortSignal.any([signal, controller.signal])
+            : controller.signal;
+
+          const searchEffort = config?.getSearchReasoningEffort?.() ?? 'low';
+          const maxTokens =
+            searchEffort === 'high'
+              ? 5000
+              : searchEffort === 'medium'
+                ? 2500
+                : 1200;
+
+          const res = await fetch('https://api.deepseek.com/responses', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model: 'deepseek-v4-flash',
+              instructions:
+                searchEffort === 'high'
+                  ? 'Search the web thoroughly and synthesize all key facts, full context, and exact source links.'
+                  : searchEffort === 'medium'
+                    ? 'Search the web and return a well-structured summary with key facts and source URLs.'
+                    : 'Search the web and return concise factual results with URLs and relevant information quickly.',
+              input: query,
+              reasoning: { effort: searchEffort },
+              max_output_tokens: maxTokens,
+              tools: [{ type: 'web_search' }],
+            }),
+            signal: combinedSignal,
+          });
+          clearTimeout(timeoutId);
+
+          if (res.ok) {
+            const data: any = await res.json();
+            let textContent = '';
+            for (const item of data.output || []) {
+              if (item.type === 'message' && Array.isArray(item.content)) {
+                for (const c of item.content) {
+                  if (c.type === 'output_text' && c.text) {
+                    textContent += c.text + '\n\n';
+                  }
+                }
+              }
+            }
+
+            if (textContent.trim()) {
+              return {
+                llmContent: `DeepSeek Native WebSearch results for "${query}":\n\n${textContent.trim()}`,
+                returnDisplay: `DeepSeek WebSearch completed for "${query}".`,
+              };
+            }
+          }
+        } catch (err: any) {
+          debugLogger.warn('DeepSeek /responses web_search failed, using fallback', err);
+        }
+      }
+
+      // Secondary fallback: fast HTML search
+      try {
+        const res = await fetch('https://lite.duckduckgo.com/lite/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent':
+              'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/119.0',
+            Accept: 'text/html',
+          },
+          body: `q=${encodeURIComponent(query)}`,
+          signal,
+        });
+
+        if (res.ok) {
+          const html = await res.text();
+          const links: Array<{ url: string; title: string }> = [];
+          const linkRegex =
+            /<a[^>]*class=['"]result-link['"][^>]*href=['"]([^'"]+)['"][^>]*>([\s\S]*?)<\/a>/gi;
+          let m: RegExpExecArray | null;
+          while ((m = linkRegex.exec(html)) !== null) {
+            let cleanUrl = m[1].replace(/&amp;/g, '&');
+            if (cleanUrl.includes('uddg=')) {
+              const match = cleanUrl.match(/uddg=([^&]+)/);
+              if (match) cleanUrl = decodeURIComponent(match[1]);
+            }
+            links.push({
+              url: cleanUrl,
+              title: m[2].replace(/<[^>]+>/g, '').trim(),
+            });
+          }
+
+          const snippets: string[] = [];
+          const snippetRegex =
+            /<td[^>]*class=['"]result-snippet['"][^>]*>([\s\S]*?)<\/td>/gi;
+          while ((m = snippetRegex.exec(html)) !== null) {
+            snippets.push(
+              m[1]
+                .replace(/<[^>]+>/g, '')
+                .replace(/\s+/g, ' ')
+                .trim(),
+            );
+          }
+
+          const results: Array<{ title: string; snippet: string; url: string }> = [];
+          for (let i = 0; i < Math.min(links.length, 6); i++) {
+            results.push({
+              title: links[i].title,
+              url: links[i].url,
+              snippet: snippets[i] || '',
+            });
+          }
+
+          if (results.length > 0) {
+            const formatted = results
+              .map(
+                (r, i) =>
+                  `[${i + 1}] ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`,
+              )
+              .join('\n\n');
+
+            return {
+              llmContent: `Web search results for "${query}":\n\n${formatted}`,
+              returnDisplay: `Found ${results.length} web results for "${query}".`,
+            };
+          }
+        }
+      } catch (err: unknown) {
+        if (isAbortError(err)) {
+          return {
+            llmContent: 'Web search was cancelled.',
+            returnDisplay: 'Search cancelled.',
+          };
+        }
+      }
+
+      return {
+        llmContent: `No search results found on the web for query: "${query}"`,
+        returnDisplay: `No web results for "${query}".`,
+      };
+    }
+
     const geminiClient = this.context.geminiClient;
 
     try {
