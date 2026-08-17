@@ -115,4 +115,14 @@ if (existsSync(extensionExamplesSrc)) {
   console.log('Copied extension examples to bundle/examples/');
 }
 
+// 7. Copy README.md and LICENSE to bundle
+if (existsSync(join(root, 'README.md'))) {
+  copyFileSync(join(root, 'README.md'), join(bundleDir, 'README.md'));
+  console.log('Copied README.md to bundle/');
+}
+if (existsSync(join(root, 'LICENSE'))) {
+  copyFileSync(join(root, 'LICENSE'), join(bundleDir, 'LICENSE'));
+  console.log('Copied LICENSE to bundle/');
+}
+
 console.log('Assets copied to bundle/');
