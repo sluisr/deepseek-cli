@@ -59,6 +59,7 @@ gha-creds-*.json
 patch_output.log
 gemini-debug.log
 WHATS_NEW_*.md
+RELEASE_NOTES_*.md
 
 .genkit
 .gemini-clipboard/
