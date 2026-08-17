@@ -106,6 +106,19 @@ deepseek --include-directories ../lib,../docs
 
 ---
 
+## Built-in Agent Tools
+
+DeepSeek CLI equips the AI agent with native developer tools to autonomously analyze, edit, and build projects:
+
+- **Atomic Code Patching (`apply_patch`):** Fast, unified diff patching saving up to 80% tokens compared to full file rewrites.
+- **Server-Side Web Search (`web_search`):** DeepSeek Responses API search engine with direct citation links and multi-level reasoning verification (`search_reasoning: low | medium | high | max`).
+- **File System Operations:** Read, write, smart-replace, search with ripgrep (`grep`), and directory discovery (`glob`).
+- **Shell Command Execution:** Autonomous bash commands, test runners, and builds with silent 0ms AskPass for `sudo`, `ssh`, and `git`.
+- **Memory & Context Files:** Persistent agent memory in `~/.deepseek/DEEPSEEK.md` and per-project `DEEPSEEK.md`.
+- **MCP Server Protocol:** Integrations with databases, GitHub, Docker, and custom tools via Model Context Protocol.
+
+---
+
 ## Configuration
 
 Configuration and persistence settings are stored under `~/.deepseek/settings.json`.
