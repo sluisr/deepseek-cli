@@ -807,6 +807,8 @@ export class DeepSeekContentGenerator implements ContentGenerator {
     debugAppend(
       `--- REQUEST AT ${new Date().toISOString()} ---\n${JSON.stringify(body, null, 2)}\n\n`,
     );
+    const userSignal =
+      (request as any)?.abortSignal || (request as any)?.signal;
     const response = await fetch(endpointUrl, {
       method: 'POST',
       headers: {
@@ -814,6 +816,7 @@ export class DeepSeekContentGenerator implements ContentGenerator {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(body),
+      signal: userSignal,
     });
 
     if (!response.ok) {
@@ -852,6 +855,8 @@ export class DeepSeekContentGenerator implements ContentGenerator {
     debugAppend(
       `--- STREAM REQUEST AT ${new Date().toISOString()} ---\n${JSON.stringify(body, null, 2)}\n\n`,
     );
+    const streamUserSignal =
+      (request as any)?.abortSignal || (request as any)?.signal;
     const response = await fetch(streamEndpointUrl, {
       method: 'POST',
       headers: {
@@ -859,6 +864,7 @@ export class DeepSeekContentGenerator implements ContentGenerator {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(body),
+      signal: streamUserSignal,
     });
 
     if (!response.ok) {
