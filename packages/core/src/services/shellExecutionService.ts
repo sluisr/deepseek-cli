@@ -18,7 +18,7 @@ import {
   resolveExecutable,
   type ShellType,
 } from '../utils/shell-utils.js';
-import { getOrInitAskPassScript } from '../utils/askpass.js';
+import { getOrInitAskPassScript, getSudoPassword } from '../utils/askpass.js';
 import { isBinary, truncateString } from '../utils/textUtils.js';
 import pkg from '@xterm/headless';
 import { debugLogger } from '../utils/debugLogger.js';
@@ -499,11 +499,18 @@ export class ShellExecutionService {
       SUDO_ASKPASS_REQUIRE: 'force',
     };
 
+    // Inject session sudo password if set (via $sudo:PASSWORD prefix)
+    const sudoPass = getSudoPassword();
+    if (sudoPass) {
+      baseEnv['DEEPSEEK_SUDO_PASSWORD'] = sudoPass;
+    }
+
     sanitizationConfig.allowedEnvironmentVariables.push(
       'SUDO_ASKPASS',
       'SSH_ASKPASS',
       'GIT_ASKPASS',
       'SUDO_ASKPASS_REQUIRE',
+      'DEEPSEEK_SUDO_PASSWORD',
     );
 
     if (!isInteractive) {
@@ -647,12 +654,12 @@ export class ShellExecutionService {
             formatInjection: (output, error) =>
               ShellExecutionService.formatShellBackgroundCompletion(
                 child.pid!,
-                shellExecutionConfig.backgroundCompletionBehavior || 'silent',
+                shellExecutionConfig.backgroundCompletionBehavior || 'inject',
                 output,
                 error ?? undefined,
               ),
             completionBehavior:
-              shellExecutionConfig.backgroundCompletionBehavior || 'silent',
+              shellExecutionConfig.backgroundCompletionBehavior || 'inject',
           })
         : undefined;
 
@@ -1048,12 +1055,12 @@ export class ShellExecutionService {
         formatInjection: (output, error) =>
           ShellExecutionService.formatShellBackgroundCompletion(
             ptyPid,
-            shellExecutionConfig.backgroundCompletionBehavior || 'silent',
+            shellExecutionConfig.backgroundCompletionBehavior || 'inject',
             output,
             error ?? undefined,
           ),
         completionBehavior:
-          shellExecutionConfig.backgroundCompletionBehavior || 'silent',
+          shellExecutionConfig.backgroundCompletionBehavior || 'inject',
       }).result;
 
       let processingChain = Promise.resolve();

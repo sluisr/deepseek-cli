@@ -884,7 +884,9 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
         availableWidth={terminalWidth - 2}
       />
       <Box marginTop={1} flexDirection="column">
-        <Text color={theme.text.secondary}>(Press Esc to close)</Text>
+        <Text color={theme.text.secondary}>
+          (Press Enter or 1-4 to select · Tab for persistence · Esc to cancel)
+        </Text>
       </Box>
     </Box>
   );

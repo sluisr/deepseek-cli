@@ -93,31 +93,48 @@ class WebSearchToolInvocation extends BaseToolInvocation<
   }: ExecuteOptions): Promise<WebSearchToolResult> {
     const config = this.context.config;
     const isDeepSeekAuth =
-      config?.getContentGeneratorConfig()?.authType === AuthType.USE_DEEPSEEK;
+      config?.getContentGeneratorConfig?.()?.authType === AuthType.USE_DEEPSEEK;
 
     // When running on DeepSeek API: use native DeepSeek Responses web_search engine
     if (isDeepSeekAuth) {
       const query = this.params.query;
       const apiKey =
-        config?.getContentGeneratorConfig()?.apiKey ||
+        config?.getContentGeneratorConfig?.()?.apiKey ||
         process.env['DEEPSEEK_API_KEY'] ||
         (await loadDeepSeekApiKey());
 
       if (apiKey) {
         try {
+          const currentModel = config?.getModel?.() || '';
+          const isPro =
+            currentModel.includes('pro') || currentModel.includes('reasoner');
+          const searchEffort: string = isPro
+            ? ((config as any)?.getProSearchReasoningEffort?.() ?? 'high')
+            : (config?.getSearchReasoningEffort?.() ?? 'low');
+          const searchModel = isPro ? 'deepseek-reasoner' : 'deepseek-chat';
+
+          const maxTokens =
+            searchEffort === 'max'
+              ? 6000
+              : searchEffort === 'high'
+                ? 4000
+                : searchEffort === 'medium'
+                  ? 2000
+                  : 800;
+
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 25000);
+          const timeoutMs =
+            searchEffort === 'max'
+              ? 25000
+              : searchEffort === 'high'
+                ? 18000
+                : searchEffort === 'medium'
+                  ? 10000
+                  : 5000;
+          const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
           const combinedSignal = signal
             ? AbortSignal.any([signal, controller.signal])
             : controller.signal;
-
-          const searchEffort = config?.getSearchReasoningEffort?.() ?? 'low';
-          const maxTokens =
-            searchEffort === 'high'
-              ? 5000
-              : searchEffort === 'medium'
-                ? 2500
-                : 1200;
 
           const res = await fetch('https://api.deepseek.com/responses', {
             method: 'POST',
@@ -126,15 +143,15 @@ class WebSearchToolInvocation extends BaseToolInvocation<
               Authorization: `Bearer ${apiKey}`,
             },
             body: JSON.stringify({
-              model: 'deepseek-v4-flash',
+              model: searchModel,
               instructions:
-                searchEffort === 'high'
+                searchEffort === 'max' || searchEffort === 'high'
                   ? 'Search the web thoroughly and synthesize all key facts, full context, and exact source links.'
                   : searchEffort === 'medium'
                     ? 'Search the web and return a well-structured summary with key facts and source URLs.'
                     : 'Search the web and return concise factual results with URLs and relevant information quickly.',
               input: query,
-              reasoning: { effort: searchEffort },
+              reasoning: { effort: searchEffort === 'max' ? 'high' : searchEffort },
               max_output_tokens: maxTokens,
               tools: [{ type: 'web_search' }],
             }),
@@ -145,31 +162,58 @@ class WebSearchToolInvocation extends BaseToolInvocation<
           if (res.ok) {
             const data: any = await res.json();
             let textContent = '';
+            let finalAnswer = '';
             for (const item of data.output || []) {
               if (item.type === 'message' && Array.isArray(item.content)) {
                 for (const c of item.content) {
                   if (c.type === 'output_text' && c.text) {
-                    textContent += c.text + '\n\n';
+                    if (item.phase === 'final_answer') {
+                      finalAnswer += (finalAnswer ? '\n\n' : '') + c.text;
+                    } else {
+                      textContent += c.text + '\n\n';
+                    }
                   }
                 }
               }
             }
 
-            if (textContent.trim()) {
+            const resultText = (finalAnswer || textContent).trim();
+            if (resultText) {
               return {
-                llmContent: `DeepSeek Native WebSearch results for "${query}":\n\n${textContent.trim()}`,
+                llmContent: `DeepSeek Native WebSearch results for "${query}":\n\n${resultText}`,
                 returnDisplay: `DeepSeek WebSearch completed for "${query}".`,
               };
             }
           }
         } catch (err: any) {
-          debugLogger.warn('DeepSeek /responses web_search failed, using fallback', err);
+          debugLogger.warn(
+            'DeepSeek native /responses web_search failed, using fast fallback',
+            err,
+          );
         }
       }
 
-      // Secondary fallback: fast HTML search
+      // Fast fallback search
       try {
-        const res = await fetch('https://lite.duckduckgo.com/lite/', {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const combinedSignal = signal
+          ? AbortSignal.any([signal, controller.signal])
+          : controller.signal;
+
+        const fetchHtml = fetch('https://html.duckduckgo.com/html/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            Accept: 'text/html',
+          },
+          body: `q=${encodeURIComponent(query)}`,
+          signal: combinedSignal,
+        });
+
+        const fetchLite = fetch('https://lite.duckduckgo.com/lite/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
@@ -178,61 +222,72 @@ class WebSearchToolInvocation extends BaseToolInvocation<
             Accept: 'text/html',
           },
           body: `q=${encodeURIComponent(query)}`,
-          signal,
+          signal: combinedSignal,
         });
 
-        if (res.ok) {
-          const html = await res.text();
-          const links: Array<{ url: string; title: string }> = [];
-          const linkRegex =
-            /<a[^>]*class=['"]result-link['"][^>]*href=['"]([^'"]+)['"][^>]*>([\s\S]*?)<\/a>/gi;
-          let m: RegExpExecArray | null;
-          while ((m = linkRegex.exec(html)) !== null) {
-            let cleanUrl = m[1].replace(/&amp;/g, '&');
-            if (cleanUrl.includes('uddg=')) {
-              const match = cleanUrl.match(/uddg=([^&]+)/);
-              if (match) cleanUrl = decodeURIComponent(match[1]);
-            }
+        const res = await Promise.any([
+          fetchHtml.then((r) => (r.ok ? r : Promise.reject(r))),
+          fetchLite.then((r) => (r.ok ? r : Promise.reject(r))),
+        ]);
+        clearTimeout(timeoutId);
+
+        const html = await res.text();
+        const results: Array<{ title: string; snippet: string; url: string }> =
+          [];
+
+        const linkRegex =
+          /<a[^>]*class=['"](?:result-link|result__url|result__snippet|result__a)['"][^>]*href=['"]([^'"]+)['"][^>]*>([\s\S]*?)<\/a>/gi;
+        const snippetRegex =
+          /<(?:td|a|div)[^>]*class=['"](?:result-snippet|result__snippet)['"][^>]*>([\s\S]*?)<\/(?:td|a|div)>/gi;
+
+        const links: Array<{ url: string; title: string }> = [];
+        let m: RegExpExecArray | null;
+        while ((m = linkRegex.exec(html)) !== null) {
+          let cleanUrl = m[1].replace(/&amp;/g, '&');
+          if (cleanUrl.includes('uddg=')) {
+            const match = cleanUrl.match(/uddg=([^&]+)/);
+            if (match) cleanUrl = decodeURIComponent(match[1]);
+          }
+          if (cleanUrl.startsWith('http')) {
             links.push({
               url: cleanUrl,
               title: m[2].replace(/<[^>]+>/g, '').trim(),
             });
           }
+        }
 
-          const snippets: string[] = [];
-          const snippetRegex =
-            /<td[^>]*class=['"]result-snippet['"][^>]*>([\s\S]*?)<\/td>/gi;
-          while ((m = snippetRegex.exec(html)) !== null) {
-            snippets.push(
-              m[1]
-                .replace(/<[^>]+>/g, '')
-                .replace(/\s+/g, ' ')
-                .trim(),
-            );
-          }
+        const snippets: string[] = [];
+        while ((m = snippetRegex.exec(html)) !== null) {
+          snippets.push(
+            m[1]
+              .replace(/<[^>]+>/g, '')
+              .replace(/\s+/g, ' ')
+              .trim(),
+          );
+        }
 
-          const results: Array<{ title: string; snippet: string; url: string }> = [];
-          for (let i = 0; i < Math.min(links.length, 6); i++) {
+        for (let i = 0; i < Math.min(links.length, 6); i++) {
+          if (links[i].url && links[i].title) {
             results.push({
               title: links[i].title,
               url: links[i].url,
               snippet: snippets[i] || '',
             });
           }
+        }
 
-          if (results.length > 0) {
-            const formatted = results
-              .map(
-                (r, i) =>
-                  `[${i + 1}] ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`,
-              )
-              .join('\n\n');
+        if (results.length > 0) {
+          const formatted = results
+            .map(
+              (r, i) =>
+                `[${i + 1}] ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`,
+            )
+            .join('\n\n');
 
-            return {
-              llmContent: `Web search results for "${query}":\n\n${formatted}`,
-              returnDisplay: `Found ${results.length} web results for "${query}".`,
-            };
-          }
+          return {
+            llmContent: `Web search results for "${query}":\n\n${formatted}`,
+            returnDisplay: `Found ${results.length} web results for "${query}".`,
+          };
         }
       } catch (err: unknown) {
         if (isAbortError(err)) {
@@ -241,6 +296,7 @@ class WebSearchToolInvocation extends BaseToolInvocation<
             returnDisplay: 'Search cancelled.',
           };
         }
+        debugLogger.warn('Fast web search fallback failed:', err);
       }
 
       return {

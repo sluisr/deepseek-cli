@@ -20,6 +20,7 @@ import type { ContentGenerator } from './contentGenerator.js';
 import type { UserTierId, GeminiUserTier } from '../code_assist/types.js';
 import { LlmRole } from '../telemetry/llmRole.js';
 import { debugLogger } from '../utils/debugLogger.js';
+import { getSudoPassword } from '../utils/askpass.js';
 
 // Marker field used to smuggle DeepSeek `reasoning_content` through the
 // Gemini Core `Content` history. It is attached to a `Part` object that
@@ -86,8 +87,18 @@ TOOL USAGE RULES (mandatory):
 - "Don't read" or "just tell me" means: don't display raw file contents. It does NOT mean skip using tools — use listing/stat tools to get counts, names, sizes, etc.
 - If you are unsure whether data exists or what it contains, call a tool. Prefer real data over assumptions every time.
 - After receiving tool output, synthesize a concise answer. Do not repeat or dump the raw output unless asked.
-- TOOL PREFERENCE ORDER for file/directory tasks: use purpose-built tools first (list_directory, read_file, glob, search_file_content) before resorting to run_shell_command. Only use shell when no specific tool covers the task.
-- run_shell_command can access ANY path on the filesystem, not just the current workspace. Never refuse to check a path outside the workspace — just run the shell command.`;
+- TOOL PREFERENCE ORDER: purpose-built tools first (list_directory, read_file, glob, search_file_content) before run_shell_command.
+- TASK EXECUTION & BACKGROUNDING:
+  * Complete tasks end-to-end autonomously in one flow. Do NOT stop halfway through quick discovery steps (e.g. nmap -sn, ip route, git status) to ask the user "dime si continúo". Advance through the workflow directly.
+  * For long-running background tasks (servers, deep vulnerability scans, watchers, heavy builds): launch them with 'is_background: true' in run_shell_command.
+  * When a long-running task is launched in the background, inform the user with its PID, and conclude the turn.
+  * NEVER use 'sleep <seconds>' or busy polling loops ('while ... sleep') to wait for background processes.
+  * When the user asks about the status of a background task ("cómo va", "cuánto falta", "revisa"): ALWAYS verify if the process has finished or if its target output file (e.g. /tmp/...txt) contains the final output. If completed, IMMEDIATELY read the final output, summarize the findings, and deliver the complete report.
+  * If a background task was a temporary probe/audit and you have obtained the results, clean it up with kill_background_process.
+- Be proactive and decisive: do NOT ask timid rhetorical permission. Act directly.`;
+
+const SUDO_AVAILABLE_RULE = `
+- SUDO PRIVILEGES: sudo is fully available in this session (password provided automatically). Use \`sudo\` freely for commands that require root privileges (nmap -sS, nmap --script vuln, nmap -sU, tcpdump, iptables, etc.). Do NOT fall back to unprivileged alternatives or ask the user about sudo access.`;
 
 const TOOL_HINTS: Record<string, string> = {
   apply_patch:
@@ -104,12 +115,69 @@ const TOOL_HINTS: Record<string, string> = {
   web_search:
     ' [PREFERRED for finding real-time information, documentation, and current web content]',
   run_shell_command:
-    ' [USE ONLY when no other specific tool covers the task — prefer list_directory, read_file, glob, or search_file_content first]',
+    ' [USE ONLY when no other tool applies — set is_background: true for long-running servers, deep scans, or watchers. NEVER use sleep loops to wait]',
+  list_background_processes:
+    ' [List running and completed background processes in this session]',
+  read_background_output:
+    ' [Read stdout/stderr logs of a background process by PID]',
+  kill_background_process:
+    ' [Terminate or kill an active background process or hung task by PID]',
+  write_background_input:
+    ' [Send stdin text input to an active background process]',
 };
 
 function enrichToolDescription(name: string, description: string): string {
   return description + (TOOL_HINTS[name] ?? '');
 }
+
+const DEFAULT_MAX_RETRIES = 2;
+const RETRYABLE_STATUS_CODES = new Set([429, 503]);
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = DEFAULT_MAX_RETRIES,
+): Promise<Response> {
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    try {
+      const response = await fetch(url, options);
+      if (
+        RETRYABLE_STATUS_CODES.has(response.status) &&
+        attempt <= maxRetries &&
+        !options.signal?.aborted
+      ) {
+        const backoffMs =
+          Math.pow(2, attempt - 1) * 1000 + Math.random() * 500;
+        debugLogger.warn(
+          `[DeepSeek] Request to ${url} failed with status ${response.status}. Retrying in ${Math.round(backoffMs)}ms (attempt ${attempt}/${maxRetries})...`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      return response;
+    } catch (err: any) {
+      if (
+        attempt <= maxRetries &&
+        !options.signal?.aborted &&
+        (err.name === 'FetchError' ||
+          err.code === 'ECONNRESET' ||
+          err.code === 'ETIMEDOUT')
+      ) {
+        const backoffMs =
+          Math.pow(2, attempt - 1) * 1000 + Math.random() * 500;
+        debugLogger.warn(
+          `[DeepSeek] Network error on ${url}: ${err.message}. Retrying in ${Math.round(backoffMs)}ms (attempt ${attempt}/${maxRetries})...`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 
 export class DeepSeekContentGenerator implements ContentGenerator {
   userTier?: UserTierId;
@@ -228,17 +296,29 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       }
       if (systemText) {
         systemText += DEEPSEEK_TOOL_ENFORCEMENT;
+        // Dynamically append sudo availability if password is set
+        if (getSudoPassword()) {
+          systemText += SUDO_AVAILABLE_RULE;
+        }
         messages.push({ role: 'system', content: systemText });
       } else {
+        let content = DEEPSEEK_TOOL_ENFORCEMENT.trim();
+        if (getSudoPassword()) {
+          content += SUDO_AVAILABLE_RULE;
+        }
         messages.push({
           role: 'system',
-          content: DEEPSEEK_TOOL_ENFORCEMENT.trim(),
+          content,
         });
       }
     } else {
+      let content = DEEPSEEK_TOOL_ENFORCEMENT.trim();
+      if (getSudoPassword()) {
+        content += SUDO_AVAILABLE_RULE;
+      }
       messages.push({
         role: 'system',
-        content: DEEPSEEK_TOOL_ENFORCEMENT.trim(),
+        content,
       });
     }
 
@@ -250,6 +330,17 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       let toolCallCounter = 0;
       // Ordered list of pending (unmatched) tool calls
       const pendingCalls: Array<{ name: string; id: string }> = [];
+      const bufferedUserTexts: string[] = [];
+
+      const flushBufferedUserTexts = () => {
+        if (bufferedUserTexts.length > 0) {
+          const combined = bufferedUserTexts.filter(Boolean).join('\n\n');
+          bufferedUserTexts.length = 0;
+          if (combined) {
+            messages.push({ role: 'user', content: combined });
+          }
+        }
+      };
 
       for (const content of contents as any[]) {
         const parts: any[] = content.parts ?? [];
@@ -273,6 +364,7 @@ export class DeepSeekContentGenerator implements ContentGenerator {
               content: 'Tool call was cancelled by the user.',
             });
           }
+          flushBufferedUserTexts();
 
           // Recovery strategy for `reasoning_content` (in priority order):
           //   1. `_deepseekReasoning` smuggled on a Part — survives the
@@ -385,9 +477,14 @@ export class DeepSeekContentGenerator implements ContentGenerator {
             for (const p of fnRespParts) {
               const fnName = p.functionResponse.name;
               const respId = p.functionResponse.id;
-              // Match by ID first if present, then FIFO by name
+              // Match by ID first (flexible with name prefixes), then FIFO by name
               let matchIdx = respId
-                ? pendingCalls.findIndex((c) => c.id === respId)
+                ? pendingCalls.findIndex(
+                    (c) =>
+                      c.id === respId ||
+                      c.id.replace(new RegExp(`^${fnName}__`), '') ===
+                        respId.replace(new RegExp(`^${fnName}__`), ''),
+                  )
                 : -1;
               if (matchIdx === -1) {
                 matchIdx = pendingCalls.findIndex((c) => c.name === fnName);
@@ -412,48 +509,40 @@ export class DeepSeekContentGenerator implements ContentGenerator {
             }
 
             if (text) {
-              // Flush any remaining pending tool calls for the current assistant turn before user text
-              for (const pending of pendingCalls.splice(0)) {
-                messages.push({
-                  role: 'tool',
-                  tool_call_id: pending.id,
-                  content: 'Tool call was cancelled by the user.',
-                });
-              }
-              messages.push({ role: 'user', content: text });
+              bufferedUserTexts.push(text);
+            }
+            if (pendingCalls.length === 0) {
+              flushBufferedUserTexts();
             }
           } else {
-            // Before adding a user message, flush any unanswered tool_calls with
-            // synthetic cancellation responses so DeepSeek doesn't reject the request.
-            for (const pending of pendingCalls.splice(0)) {
-              messages.push({
-                role: 'tool',
-                tool_call_id: pending.id,
-                content: 'Tool call was cancelled by the user.',
-              });
-            }
-            if (
-              text ||
-              messages.length === 0 ||
-              messages[messages.length - 1].role !== 'user'
-            ) {
-              messages.push({
-                role: 'user',
-                content: text,
-              });
+            // Non-tool user message (e.g. IDE context, user steering, or regular text).
+            if (pendingCalls.length > 0) {
+              if (text) bufferedUserTexts.push(text);
+            } else {
+              if (
+                text ||
+                messages.length === 0 ||
+                messages[messages.length - 1].role !== 'user'
+              ) {
+                messages.push({
+                  role: 'user',
+                  content: text,
+                });
+              }
             }
           }
         }
       }
 
       // Flush any remaining unanswered tool_calls at the end (safety net)
-      for (const pending of pendingCalls) {
+      for (const pending of pendingCalls.splice(0)) {
         messages.push({
           role: 'tool',
           tool_call_id: pending.id,
           content: 'Tool call was cancelled by the user.',
         });
       }
+      flushBufferedUserTexts();
 
       // Final strict validation pass for DeepSeek/OpenAI schema:
       // Ensure NO message with role 'tool' exists unless the preceding message is an assistant with tool_calls.
@@ -809,7 +898,7 @@ export class DeepSeekContentGenerator implements ContentGenerator {
     );
     const userSignal =
       (request as any)?.abortSignal || (request as any)?.signal;
-    const response = await fetch(endpointUrl, {
+    const response = await fetchWithRetry(endpointUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -857,7 +946,7 @@ export class DeepSeekContentGenerator implements ContentGenerator {
     );
     const streamUserSignal =
       (request as any)?.abortSignal || (request as any)?.signal;
-    const response = await fetch(streamEndpointUrl, {
+    const response = await fetchWithRetry(streamEndpointUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -891,211 +980,310 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       let fullReasoning = '';
       let fullText = '';
       let latestUsage: any = undefined;
+      let isFinalChunkEmitted = false;
 
-      while (true) {
-        const { done, value } = await reader!.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader!.read();
+          if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed === 'data: [DONE]') continue;
 
-          if (trimmed.startsWith('data: ')) {
-            let json: any;
-            try {
-              json = JSON.parse(trimmed.substring(6));
-            } catch {
-              continue;
-            }
+            if (trimmed.startsWith('data: ')) {
+              let json: any;
+              try {
+                json = JSON.parse(trimmed.substring(6));
+              } catch {
+                continue;
+              }
 
-            if (json.usage) {
-              latestUsage = json.usage;
-              logCacheStats('stream', json.usage);
-            }
-
-            const choice = json.choices?.[0];
-            if (!choice) {
-              // Yield usage metadata if delivered as standalone final chunk
               if (json.usage) {
+                latestUsage = json.usage;
+                logCacheStats('stream', json.usage);
+              }
+
+              const choice = json.choices?.[0];
+              if (!choice) {
+                // Yield usage metadata if delivered as standalone final chunk
+                if (json.usage) {
+                  yield {
+                    candidates: [],
+                    usageMetadata: {
+                      promptTokenCount: json.usage.prompt_tokens,
+                      candidatesTokenCount: json.usage.completion_tokens,
+                      totalTokenCount: json.usage.total_tokens,
+                      cachedContentTokenCount: json.usage.prompt_cache_hit_tokens,
+                    },
+                  } as unknown as GenerateContentResponse;
+                }
+                continue;
+              }
+
+              const delta = choice.delta ?? {};
+              const deltaContent = delta.content;
+              const deltaReasoning = delta.reasoning_content;
+              const isFinished = choice.finish_reason != null;
+
+              // Yield reasoning content chunks
+              if (deltaReasoning) {
+                fullReasoning += deltaReasoning;
                 yield {
-                  candidates: [],
-                  usageMetadata: {
-                    promptTokenCount: json.usage.prompt_tokens,
-                    candidatesTokenCount: json.usage.completion_tokens,
-                    totalTokenCount: json.usage.total_tokens,
-                    cachedContentTokenCount: json.usage.prompt_cache_hit_tokens,
-                  },
-                } as unknown as GenerateContentResponse;
-              }
-              continue;
-            }
-
-            const delta = choice.delta ?? {};
-            const deltaContent = delta.content;
-            const deltaReasoning = delta.reasoning_content;
-            const isFinished = choice.finish_reason != null;
-
-            // Yield reasoning content chunks
-            if (deltaReasoning) {
-              fullReasoning += deltaReasoning;
-              yield {
-                candidates: [
-                  {
-                    content: {
-                      role: 'model',
-                      parts: [{ text: deltaReasoning, thought: true }],
-                    },
-                  },
-                ],
-              } as GenerateContentResponse;
-            }
-
-            // Accumulate streaming tool_calls deltas
-            if (delta.tool_calls) {
-              hasToolCalls = true;
-              for (const tc of delta.tool_calls) {
-                const idx: number = tc.index ?? 0;
-                if (!toolCallAcc[idx]) {
-                  toolCallAcc[idx] = {
-                    id: tc.id ?? `call_${idx}`,
-                    name: '',
-                    arguments: '',
-                  };
-                }
-                if (tc.id) toolCallAcc[idx].id = tc.id;
-                if (tc.function?.name)
-                  toolCallAcc[idx].name += tc.function.name;
-                if (tc.function?.arguments)
-                  toolCallAcc[idx].arguments += tc.function.arguments;
-              }
-            }
-
-            // Yield text content chunks. The FIRST non-empty content delta
-            // carries the accumulated `reasoning_content` as a smuggled
-            // property on the Part. Because the Gemini Core consolidates
-            // adjacent text parts into the FIRST one (mutating its `text`),
-            // properties attached to that first part survive history
-            // serialization. This gives us a reliable carrier for reasoning
-            // across multi-turn conversations even when the disk cache fails.
-            if (deltaContent) {
-              const isFirstContentChunk = fullText.length === 0;
-              fullText += deltaContent;
-              const part: any = { text: deltaContent };
-              if (isFirstContentChunk && fullReasoning) {
-                part[REASONING_FIELD] = fullReasoning;
-              }
-              yield {
-                candidates: [
-                  {
-                    content: { role: 'model', parts: [part] },
-                  },
-                ],
-              } as GenerateContentResponse;
-            }
-
-            // Final chunk: yield tool calls or STOP finishReason
-            if (isFinished) {
-              const parts: any[] = [];
-              const fnCalls: any[] = [];
-
-              if (fullReasoning) {
-                parts.push({ text: fullReasoning, thought: true });
-              }
-
-              if (hasToolCalls) {
-                let firstFnCall = true;
-                for (const idx of Object.keys(toolCallAcc).map(Number).sort()) {
-                  const tc = toolCallAcc[idx];
-                  let args = {};
-                  try {
-                    args = JSON.parse(tc.arguments);
-                  } catch {
-                    args = { _raw: tc.arguments };
-                  }
-                  const part: any = {
-                    functionCall: { id: tc.id, name: tc.name, args },
-                  };
-                  // Smuggle reasoning_content on the FIRST functionCall part
-                  // so it survives the Core's history pipeline even when the
-                  // assistant produced no text content (the common case for
-                  // tool-only sub-turns).
-                  if (firstFnCall && fullReasoning) {
-                    part[REASONING_FIELD] = fullReasoning;
-                    firstFnCall = false;
-                  }
-                  parts.push(part);
-                  fnCalls.push({ id: tc.id, name: tc.name, args });
-                }
-              }
-
-              const usageToInclude = json.usage || latestUsage;
-              const finalChunk: any = {
-                candidates: [
-                  {
-                    content: {
-                      role: 'model',
-                      parts,
-                      // Protection: Save the accumulated reasoning in the final object
-                      reasoning_content: fullReasoning,
-                    },
-                    finishReason: 'STOP',
-                  },
-                ],
-                ...(usageToInclude
-                  ? {
-                      usageMetadata: {
-                        promptTokenCount: usageToInclude.prompt_tokens,
-                        candidatesTokenCount: usageToInclude.completion_tokens,
-                        totalTokenCount: usageToInclude.total_tokens,
-                        cachedContentTokenCount:
-                          usageToInclude.prompt_cache_hit_tokens,
+                  candidates: [
+                    {
+                      content: {
+                        role: 'model',
+                        parts: [{ text: deltaReasoning, thought: true }],
                       },
-                    }
-                  : {}),
-              };
-
-              if (fnCalls.length > 0) {
-                finalChunk.functionCalls = fnCalls;
+                    },
+                  ],
+                } as GenerateContentResponse;
               }
 
-              // Save to cache for the next turn (Streaming) with stable signature
-              if (fullReasoning) {
-                // For streaming, reconstruct accumulated tool_calls if they exist
-                const fnCallsForKey = hasToolCalls
-                  ? Object.keys(toolCallAcc)
-                      .map(Number)
-                      .sort()
-                      .map((idx) => ({
-                        name: toolCallAcc[idx].name,
-                        args: JSON.parse(toolCallAcc[idx].arguments || '{}'),
-                      }))
-                  : undefined;
-
-                const messageKey = self.getMessageKey(fullText, fnCallsForKey);
-                debugAppend(
-                  `[CACHE SAVE STREAM] Saving for: ${fullText.substring(0, 30)}... (Key: ${messageKey.substring(0, 50)})\n`,
-                );
-                DeepSeekContentGenerator.reasoningCache.set(
-                  messageKey,
-                  fullReasoning,
-                );
-                if (DeepSeekContentGenerator.reasoningCache.size > 200) {
-                  const firstKey = DeepSeekContentGenerator.reasoningCache
-                    .keys()
-                    .next().value;
-                  if (firstKey !== undefined)
-                    DeepSeekContentGenerator.reasoningCache.delete(firstKey);
+              // Accumulate streaming tool_calls deltas
+              if (delta.tool_calls) {
+                hasToolCalls = true;
+                for (const tc of delta.tool_calls) {
+                  const idx: number = tc.index ?? 0;
+                  if (!toolCallAcc[idx]) {
+                    toolCallAcc[idx] = {
+                      id: tc.id ?? `call_${idx}`,
+                      name: '',
+                      arguments: '',
+                    };
+                  }
+                  if (tc.id) toolCallAcc[idx].id = tc.id;
+                  if (tc.function?.name)
+                    toolCallAcc[idx].name += tc.function.name;
+                  if (tc.function?.arguments)
+                    toolCallAcc[idx].arguments += tc.function.arguments;
                 }
-                DeepSeekContentGenerator.saveCache();
               }
 
-              yield finalChunk as GenerateContentResponse;
+              // Yield text content chunks. The FIRST non-empty content delta
+              // carries the accumulated `reasoning_content` as a smuggled
+              // property on the Part. Because the Gemini Core consolidates
+              // adjacent text parts into the FIRST one (mutating its `text`),
+              // properties attached to that first part survive history
+              // serialization. This gives us a reliable carrier for reasoning
+              // across multi-turn conversations even when the disk cache fails.
+              if (deltaContent) {
+                const isFirstContentChunk = fullText.length === 0;
+                fullText += deltaContent;
+                const part: any = { text: deltaContent };
+                if (isFirstContentChunk && fullReasoning) {
+                  part[REASONING_FIELD] = fullReasoning;
+                }
+                yield {
+                  candidates: [
+                    {
+                      content: { role: 'model', parts: [part] },
+                    },
+                  ],
+                } as GenerateContentResponse;
+              }
+
+              // Final chunk: yield tool calls or STOP finishReason
+              if (isFinished) {
+                isFinalChunkEmitted = true;
+                const parts: any[] = [];
+                const fnCalls: any[] = [];
+
+                if (fullReasoning) {
+                  parts.push({ text: fullReasoning, thought: true });
+                }
+
+                if (hasToolCalls) {
+                  let firstFnCall = true;
+                  for (const idx of Object.keys(toolCallAcc).map(Number).sort()) {
+                    const tc = toolCallAcc[idx];
+                    let args = {};
+                    try {
+                      args = JSON.parse(tc.arguments);
+                    } catch {
+                      args = { _raw: tc.arguments };
+                    }
+                    const part: any = {
+                      functionCall: { id: tc.id, name: tc.name, args },
+                    };
+                    // Smuggle reasoning_content on the FIRST functionCall part
+                    // so it survives the Core's history pipeline even when the
+                    // assistant produced no text content (the common case for
+                    // tool-only sub-turns).
+                    if (firstFnCall && fullReasoning) {
+                      part[REASONING_FIELD] = fullReasoning;
+                      firstFnCall = false;
+                    }
+                    parts.push(part);
+                    fnCalls.push({ id: tc.id, name: tc.name, args });
+                  }
+                }
+
+                const usageToInclude = json.usage || latestUsage;
+                const finalChunk: any = {
+                  candidates: [
+                    {
+                      content: {
+                        role: 'model',
+                        parts,
+                        // Protection: Save the accumulated reasoning in the final object
+                        reasoning_content: fullReasoning,
+                      },
+                      finishReason: 'STOP',
+                    },
+                  ],
+                  ...(usageToInclude
+                    ? {
+                        usageMetadata: {
+                          promptTokenCount: usageToInclude.prompt_tokens,
+                          candidatesTokenCount: usageToInclude.completion_tokens,
+                          totalTokenCount: usageToInclude.total_tokens,
+                          cachedContentTokenCount:
+                            usageToInclude.prompt_cache_hit_tokens,
+                        },
+                      }
+                    : {}),
+                };
+
+                if (fnCalls.length > 0) {
+                  finalChunk.functionCalls = fnCalls;
+                }
+
+                // Save to cache for the next turn (Streaming) with stable signature
+                if (fullReasoning) {
+                  // For streaming, reconstruct accumulated tool_calls if they exist
+                  const fnCallsForKey = hasToolCalls
+                    ? Object.keys(toolCallAcc)
+                        .map(Number)
+                        .sort()
+                        .map((idx) => ({
+                          name: toolCallAcc[idx].name,
+                          args: JSON.parse(toolCallAcc[idx].arguments || '{}'),
+                        }))
+                    : undefined;
+
+                  const messageKey = self.getMessageKey(fullText, fnCallsForKey);
+                  debugAppend(
+                    `[CACHE SAVE STREAM] Saving for: ${fullText.substring(0, 30)}... (Key: ${messageKey.substring(0, 50)})\n`,
+                  );
+                  DeepSeekContentGenerator.reasoningCache.set(
+                    messageKey,
+                    fullReasoning,
+                  );
+                  if (DeepSeekContentGenerator.reasoningCache.size > 200) {
+                    const firstKey = DeepSeekContentGenerator.reasoningCache
+                      .keys()
+                      .next().value;
+                    if (firstKey !== undefined)
+                      DeepSeekContentGenerator.reasoningCache.delete(firstKey);
+                  }
+                  DeepSeekContentGenerator.saveCache();
+                }
+
+                yield finalChunk as GenerateContentResponse;
+              }
             }
           }
+        }
+
+        // Fallback: If the stream finished without an explicit finish_reason delta,
+        // emit the final chunk with STOP to prevent NO_FINISH_REASON errors.
+        if (!isFinalChunkEmitted) {
+          const parts: any[] = [];
+          const fnCalls: any[] = [];
+
+          if (fullReasoning) {
+            parts.push({ text: fullReasoning, thought: true });
+          }
+
+          if (hasToolCalls) {
+            let firstFnCall = true;
+            for (const idx of Object.keys(toolCallAcc).map(Number).sort()) {
+              const tc = toolCallAcc[idx];
+              let args = {};
+              try {
+                args = JSON.parse(tc.arguments);
+              } catch {
+                args = { _raw: tc.arguments };
+              }
+              const part: any = {
+                functionCall: { id: tc.id, name: tc.name, args },
+              };
+              if (firstFnCall && fullReasoning) {
+                part[REASONING_FIELD] = fullReasoning;
+                firstFnCall = false;
+              }
+              parts.push(part);
+              fnCalls.push({ id: tc.id, name: tc.name, args });
+            }
+          }
+
+          const finalChunk: any = {
+            candidates: [
+              {
+                content: {
+                  role: 'model',
+                  parts: parts.length > 0 ? parts : [{ text: '' }],
+                  reasoning_content: fullReasoning,
+                },
+                finishReason: 'STOP',
+              },
+            ],
+            ...(latestUsage
+              ? {
+                  usageMetadata: {
+                    promptTokenCount: latestUsage.prompt_tokens,
+                    candidatesTokenCount: latestUsage.completion_tokens,
+                    totalTokenCount: latestUsage.total_tokens,
+                    cachedContentTokenCount:
+                      latestUsage.prompt_cache_hit_tokens,
+                  },
+                }
+              : {}),
+          };
+
+          if (fnCalls.length > 0) {
+            finalChunk.functionCalls = fnCalls;
+          }
+
+          if (fullReasoning) {
+            const fnCallsForKey = hasToolCalls
+              ? Object.keys(toolCallAcc)
+                  .map(Number)
+                  .sort()
+                  .map((idx) => ({
+                    name: toolCallAcc[idx].name,
+                    args: JSON.parse(toolCallAcc[idx].arguments || '{}'),
+                  }))
+              : undefined;
+
+            const messageKey = self.getMessageKey(fullText, fnCallsForKey);
+            DeepSeekContentGenerator.reasoningCache.set(
+              messageKey,
+              fullReasoning,
+            );
+            if (DeepSeekContentGenerator.reasoningCache.size > 200) {
+              const firstKey = DeepSeekContentGenerator.reasoningCache
+                .keys()
+                .next().value;
+              if (firstKey !== undefined)
+                DeepSeekContentGenerator.reasoningCache.delete(firstKey);
+            }
+            DeepSeekContentGenerator.saveCache();
+          }
+
+          yield finalChunk as GenerateContentResponse;
+        }
+      } finally {
+        try {
+          reader?.releaseLock();
+        } catch {
+          // Ignore release lock error if reader was already closed
         }
       }
     }

@@ -43,11 +43,11 @@ export class ModelRouterService {
     // Order matters here. Fallback is checked first.
     strategies.push(new FallbackStrategy());
 
-    // DeepSeek classifier runs before OverrideStrategy so it can escalate
-    // deepseek-chat → deepseek-reasoner before the override short-circuits.
-    strategies.push(new DeepSeekClassifierStrategy());
-
+    // Explicit user model selection is strictly respected first.
     strategies.push(new OverrideStrategy());
+
+    // DeepSeek classifier is used for auto-routing when model is 'auto'.
+    strategies.push(new DeepSeekClassifierStrategy());
 
     // Approval mode is next.
     strategies.push(new ApprovalModeStrategy());

@@ -58,8 +58,7 @@ gha-creds-*.json
 # Log files
 patch_output.log
 gemini-debug.log
-WHATS_NEW_*.md
-RELEASE_NOTES_*.md
+
 
 .genkit
 .gemini-clipboard/
@@ -70,3 +69,17 @@ temp_agents/
 
 # conductor extension and planning directories
 conductor/
+
+# Private internal docs & release drafts
+*PRIVATE*.md
+*private*.md
+*Private*.md
+HISTORIC_CHANGES_PRIVATE.md
+WHATS_NEW_*.md
+RELEASE_NOTES_*.md
+*.local.md
+*.secret*
+*.pem
+*.key
+credentials*.json
+

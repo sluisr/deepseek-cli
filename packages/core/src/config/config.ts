@@ -56,6 +56,8 @@ import { EnterPlanModeTool } from '../tools/enter-plan-mode.js';
 import {
   ListBackgroundProcessesTool,
   ReadBackgroundOutputTool,
+  KillBackgroundProcessTool,
+  WriteBackgroundInputTool,
 } from '../tools/shellBackgroundTools.js';
 import { GeminiClient } from '../core/client.js';
 import { BaseLlmClient } from '../core/baseLlmClient.js';
@@ -4181,6 +4183,16 @@ export class Config implements McpContext, AgentLoopContext {
     maybeRegister(ReadBackgroundOutputTool, () =>
       registry.registerTool(
         new ReadBackgroundOutputTool(this, this.messageBus),
+      ),
+    );
+    maybeRegister(KillBackgroundProcessTool, () =>
+      registry.registerTool(
+        new KillBackgroundProcessTool(this, this.messageBus),
+      ),
+    );
+    maybeRegister(WriteBackgroundInputTool, () =>
+      registry.registerTool(
+        new WriteBackgroundInputTool(this, this.messageBus),
       ),
     );
     maybeRegister(WebSearchTool, () =>

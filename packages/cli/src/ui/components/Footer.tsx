@@ -16,6 +16,8 @@ import {
   AuthType,
   UserAccountManager,
   DEEPSEEK_CHAT_MODEL,
+  DEEPSEEK_REASONER_MODEL,
+  ShellExecutionService,
 } from '@google/gemini-cli-core';
 import { ConsoleSummaryDisplay } from './ConsoleSummaryDisplay.js';
 import process from 'node:process';
@@ -225,6 +227,26 @@ export const Footer: React.FC = () => {
 
   const quotaStats = quotaState.stats;
 
+  const [activeTasksCount, setActiveTasksCount] = useState(0);
+
+  useEffect(() => {
+    const checkTasks = () => {
+      try {
+        const sessionId = config.getSessionId();
+        const processes =
+          ShellExecutionService.listBackgroundProcesses(sessionId);
+        const active = processes.filter((p) => p.status === 'running').length;
+        setActiveTasksCount(active);
+      } catch {
+        setActiveTasksCount(0);
+      }
+    };
+
+    checkTasks();
+    const interval = setInterval(checkTasks, 1500);
+    return () => clearInterval(interval);
+  }, [config]);
+
   const isFullErrorVerbosity = settings.merged.ui.errorVerbosity === 'full';
   const showErrorSummary =
     !showErrorDetails &&
@@ -325,8 +347,11 @@ export const Footer: React.FC = () => {
       }
       case 'model-name': {
         const isDeepSeekFlash = model === DEEPSEEK_CHAT_MODEL;
+        const isDeepSeekPro = model === DEEPSEEK_REASONER_MODEL;
         const temperature = config.getTemperature?.();
         const reasoningEffort = config.getReasoningEffort?.();
+        const proReasoningEffort =
+          (config as any)?.getProReasoningEffort?.() ?? 'high';
         const str = getDisplayString(model);
         // For V4-Flash: show t: · r: to the LEFT of the model name with dynamic thermal colors
         if (isDeepSeekFlash && temperature !== undefined && reasoningEffort) {
@@ -350,10 +375,41 @@ export const Footer: React.FC = () => {
                 <Text color={theme.text.secondary}>{'t:'}</Text>
                 <Text color={tempColor}>{tempStr}</Text>
                 <Text color={theme.text.secondary}>{' · r:'}</Text>
-                <Text color={
-                  reasoningEffort === 'low' ? '#69f0ae' :
-                  reasoningEffort === 'medium' ? '#ff9800' : '#f44336'
-                }>{reasoningEffort}</Text>
+                <Text
+                  color={
+                    reasoningEffort === 'low'
+                      ? '#69f0ae'
+                      : reasoningEffort === 'medium'
+                        ? '#ff9800'
+                        : '#f44336'
+                  }
+                >
+                  {reasoningEffort}
+                </Text>
+                <Text color={theme.text.secondary}>{' · '}</Text>
+                <Text color={itemColor}>{str}</Text>
+              </Box>
+            ),
+            fullStr.length,
+          );
+        } else if (isDeepSeekPro && proReasoningEffort) {
+          // For V4-Pro: show r:<effort> with dynamic reasoning colors (low, medium, high, max)
+          const fullStr = `r:${proReasoningEffort} · ${str}`;
+          const proColor =
+            proReasoningEffort === 'low'
+              ? '#69f0ae'
+              : proReasoningEffort === 'medium'
+                ? '#ff9800'
+                : proReasoningEffort === 'high'
+                  ? '#f44336'
+                  : '#e040fb'; // max -> purple / magenta
+          addCol(
+            id,
+            header,
+            () => (
+              <Box>
+                <Text color={theme.text.secondary}>{'r:'}</Text>
+                <Text color={proColor}>{proReasoningEffort}</Text>
                 <Text color={theme.text.secondary}>{' · '}</Text>
                 <Text color={itemColor}>{str}</Text>
               </Box>
@@ -489,6 +545,22 @@ export const Footer: React.FC = () => {
             header,
             () => <Text color={itemColor}>{formatted} tokens</Text>,
             formatted.length + 7,
+          );
+        }
+        break;
+      }
+      case 'tasks': {
+        if (activeTasksCount > 0) {
+          const str = `${activeTasksCount} running`;
+          addCol(
+            id,
+            header,
+            () => (
+              <Text color={theme.text.accent}>
+                {activeTasksCount} running
+              </Text>
+            ),
+            str.length,
           );
         }
         break;

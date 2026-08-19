@@ -9,7 +9,6 @@ import {
   CommandKind,
   type SlashCommand,
 } from './types.js';
-import { MessageType } from '../types.js';
 
 export const infoCommand: SlashCommand = {
   name: 'info',

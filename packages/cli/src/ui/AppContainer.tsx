@@ -87,7 +87,6 @@ import {
   type AgentsDiscoveredPayload,
   ChangeAuthRequestedError,
   ProjectIdRequiredError,
-  buildUserSteeringHintPrompt,
   logBillingEvent,
   ApiKeyUpdatedEvent,
   LegacyAgentProtocol,
@@ -857,7 +856,7 @@ Logging in with Google... Restarting Gemini CLI to continue.
     async (apiKey: string) => {
       try {
         if (!apiKey.trim()) {
-          setAuthError('API key cannot be empty or whitespace only.');
+          onAuthError('API key cannot be empty or whitespace only.');
           return;
         }
 
@@ -2330,7 +2329,6 @@ Logging in with Google... Restarting Gemini CLI to continue.
   useEffect(() => {
     if (
       !isConfigInitialized ||
-      !config.isModelSteeringEnabled() ||
       streamingState !== StreamingState.Idle ||
       !isMcpReady ||
       isToolAwaitingConfirmation(pendingHistoryItems)
@@ -2343,7 +2341,7 @@ Logging in with Google... Restarting Gemini CLI to continue.
       return;
     }
 
-    void submitQuery([{ text: buildUserSteeringHintPrompt(pendingHint) }]);
+    void submitQuery([{ text: pendingHint }]);
   }, [
     config,
     historyManager,

@@ -22,6 +22,7 @@ import {
   parseAndFormatApiError,
   ToolConfirmationOutcome,
   MessageBusType,
+  ShellExecutionService,
   promptIdContext,
   tokenLimit,
   debugLogger,
@@ -52,6 +53,7 @@ import {
   RECITATION_BLOCKED_MESSAGE,
   OTHER_BLOCKED_MESSAGE,
   TRUE_EMPTY_RESPONSE_MESSAGE,
+  setSudoPassword,
 } from '@google/gemini-cli-core';
 import type {
   Config,
@@ -261,6 +263,8 @@ export const useGeminiStream = (
   const previousApprovalModeRef = useRef<ApprovalMode>(
     config.getApprovalMode(),
   );
+  const oneShotApprovalRestoreRef = useRef<ApprovalMode | null>(null);
+  const activeAutoObjectiveRef = useRef<boolean>(false);
   const [isResponding, isRespondingRef, setIsResponding] =
     useStateAndRef<boolean>(false);
   const [thought, thoughtRef, setThought] =
@@ -446,6 +450,18 @@ export const useGeminiStream = (
     setIsFirstToolInGroup,
     streamingState,
   ]);
+
+  // Restore original approval mode when a one-shot auto-approval turn returns to Idle
+  useEffect(() => {
+    if (
+      streamingState === StreamingState.Idle &&
+      oneShotApprovalRestoreRef.current !== null
+    ) {
+      const restoreMode = oneShotApprovalRestoreRef.current;
+      oneShotApprovalRestoreRef.current = null;
+      config.setApprovalMode(restoreMode);
+    }
+  }, [streamingState, config]);
 
   // Push completed tools to history as they finish
   useEffect(() => {
@@ -1024,8 +1040,108 @@ export const useGeminiStream = (
           return { queryToSend: null, shouldProceed: false };
         }
 
+        // Check for auto-approval prefixes ($auto, $auto:, /auto, /auto:) or continuation of an active auto objective
+        let processedPrompt = trimmedQuery;
+        let isOneShotAuto = false;
+
+        // Continuously extract known prefixes ($auto, /auto, $sudo:PASS, /sudo:PASS) in any order
+        let extractLoop = true;
+        while (extractLoop) {
+          extractLoop = false;
+          // Check $sudo:PASS or /sudo:PASS
+          const sudoMatch = processedPrompt.match(/^[$/]sudo:(\S+)\s*/i);
+          if (sudoMatch) {
+            setSudoPassword(sudoMatch[1]);
+            processedPrompt = processedPrompt.slice(sudoMatch[0].length).trim();
+            extractLoop = true;
+            continue;
+          }
+          // Check $auto or /auto
+          const autoMatch = processedPrompt.match(/^[$/]auto(?::|\s+|$)\s*/i);
+          if (autoMatch) {
+            isOneShotAuto = true;
+            activeAutoObjectiveRef.current = true;
+            processedPrompt = processedPrompt.slice(autoMatch[0].length).trim();
+            extractLoop = true;
+            continue;
+          }
+        }
+
+        const lower = processedPrompt.toLowerCase();
+        const lowerClean = lower.replace(/[.!?,;:]/g, '').trim();
+
+        const CONTINUATION_WORDS = new Set([
+          'procede',
+          'continua',
+          'continúa',
+          'sigue',
+          'dale',
+          'ok',
+          'adelante',
+          'siguiente',
+          'hazlo',
+          'yes',
+          'si',
+          'sí',
+          'y',
+          'go',
+          'next',
+          'continue',
+          'proceed',
+          'avanza',
+          'revisa',
+          'revisa y sigue',
+          'listo',
+          'ejecuta',
+          'ejecutalo',
+          'ejecútalo',
+          'dale caña',
+        ]);
+
+        const isContinuationPhrase =
+          CONTINUATION_WORDS.has(lower) ||
+          CONTINUATION_WORDS.has(lowerClean) ||
+          lower.startsWith('continua ') ||
+          lower.startsWith('continúa ') ||
+          lower.startsWith('sigue ') ||
+          lower.startsWith('procede ') ||
+          lower.startsWith('revisa ') ||
+          lower.startsWith('avanza ') ||
+          lower.startsWith('siguiente ') ||
+          lower.startsWith('dale ');
+
+        let hasActiveTasks = false;
+        try {
+          hasActiveTasks = ShellExecutionService.listBackgroundProcesses(
+            config.getSessionId(),
+          ).some((p) => p.status === 'running');
+        } catch {
+          // ignore
+        }
+
+        if (isOneShotAuto) {
+          // Already detected and activeAutoObjectiveRef set
+        } else if (
+          activeAutoObjectiveRef.current &&
+          (isContinuationPhrase || hasActiveTasks)
+        ) {
+          // Inherit auto-approval for continuation messages of the active objective!
+          isOneShotAuto = true;
+        } else {
+          // Unrelated new prompt without $auto -> reset active auto objective
+          activeAutoObjectiveRef.current = false;
+        }
+
+        if (isOneShotAuto && processedPrompt.length > 0) {
+          const currentMode = config.getApprovalMode();
+          if (currentMode !== ApprovalMode.YOLO) {
+            oneShotApprovalRestoreRef.current = currentMode;
+            config.setApprovalMode(ApprovalMode.YOLO);
+          }
+        }
+
         // Handle @-commands (which might involve tool calls)
-        if (isAtCommand(trimmedQuery)) {
+        if (isAtCommand(processedPrompt)) {
           // Add user's turn before @ command processing for correct UI ordering.
           addItem(
             { type: MessageType.USER, text: trimmedQuery },
@@ -1033,7 +1149,7 @@ export const useGeminiStream = (
           );
 
           const atCommandResult = await handleAtCommand({
-            query: trimmedQuery,
+            query: processedPrompt,
             config,
             addItem,
             onDebugMessage,
@@ -1052,7 +1168,7 @@ export const useGeminiStream = (
             { type: MessageType.USER, text: trimmedQuery },
             userMessageTimestamp,
           );
-          localQueryToSendToGemini = trimmedQuery;
+          localQueryToSendToGemini = processedPrompt;
         }
       } else {
         // It's a function response (PartListUnion that isn't a string)

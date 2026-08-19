@@ -30,7 +30,10 @@ interface AuthDialogProps {
   setAuthState: (state: AuthState) => void;
   authError: string | null;
   onAuthError: (error: string | null) => void;
-  setAuthContext: (context: { requiresRestart?: boolean }) => void;
+  setAuthContext: (context: {
+    requiresRestart?: boolean;
+    pendingAuthType?: AuthType;
+  }) => void;
 }
 
 export function AuthDialog({

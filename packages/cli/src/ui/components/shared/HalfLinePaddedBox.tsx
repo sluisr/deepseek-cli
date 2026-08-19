@@ -14,7 +14,7 @@ import {
   resolveColor,
   getSafeLowColorBackground,
 } from '../../themes/color-utils.js';
-import { isLowColorDepth, isITerm2 } from '../../utils/terminalUtils.js';
+import { isLowColorDepth } from '../../utils/terminalUtils.js';
 
 export interface HalfLinePaddedBoxProps {
   /**

@@ -40,7 +40,6 @@ import {
   stripShellWrapper,
   parseCommandDetails,
   hasRedirection,
-  detectCommandSubstitution,
   normalizeCommand,
   escapeShellArg,
 } from '../utils/shell-utils.js';
@@ -63,6 +62,7 @@ export const LIVE_OUTPUT_MAX_BUFFER_CHARS = 100_000;
 
 // Delay so user does not see the output of the process before the process is moved to the background.
 const BACKGROUND_DELAY_MS = 200;
+const DEFAULT_AUTO_BACKGROUND_TIMEOUT_MS = 10_000; // Default execution timeout before auto-backgrounding (10s)
 const SHOW_NL_DESCRIPTION_THRESHOLD = 150;
 const LOW_SURROGATE_START = 0xdc00;
 const LOW_SURROGATE_END = 0xdfff;
@@ -89,6 +89,7 @@ export interface ShellToolParams {
   dir_path?: string;
   is_background?: boolean;
   delay_ms?: number;
+  wait_ms_before_async?: number;
   [PARAM_ADDITIONAL_PERMISSIONS]?: SandboxPermissions;
 }
 
@@ -465,18 +466,6 @@ export class ShellToolInvocation extends BaseToolInvocation<
     } = options;
     const strippedCommand = stripShellWrapper(this.params.command);
 
-    if (detectCommandSubstitution(strippedCommand)) {
-      return {
-        llmContent:
-          'Command injection detected: command substitution syntax ' +
-          '($(), backticks, <() or >()) found in command arguments. ' +
-          'On PowerShell, @() array subexpressions and $() subexpressions are also blocked. ' +
-          'This is a security risk and the command was blocked.',
-        returnDisplay:
-          'Blocked: command substitution detected in shell command.',
-      };
-    }
-
     if (signal.aborted) {
       return {
         llmContent: 'Command was cancelled by user before it could start.',
@@ -487,6 +476,7 @@ export class ShellToolInvocation extends BaseToolInvocation<
     const isWindows = os.platform() === 'win32';
     let tempFilePath = '';
     let tempDir = '';
+    let wasAutoBackgrounded = false;
 
     const timeoutMs = this.context.config.getShellToolInactivityTimeout();
     const timeoutController = new AbortController();
@@ -688,14 +678,17 @@ export class ShellToolInvocation extends BaseToolInvocation<
           },
         );
 
+      let result: Awaited<typeof resultPromise>;
+
       if (pid) {
         if (setExecutionIdCallback) {
           setExecutionIdCallback(pid);
         }
 
-        // If the model requested to run in the background, do so after a short delay.
-        let completed = false;
+        const sessionId = this.context.config?.getSessionId?.() ?? 'default';
+
         if (this.params.is_background) {
+          let completed = false;
           resultPromise
             .then(() => {
               completed = true;
@@ -704,7 +697,6 @@ export class ShellToolInvocation extends BaseToolInvocation<
               completed = true; // Also mark completed if it failed
             });
 
-          const sessionId = this.context.config?.getSessionId?.() ?? 'default';
           const delay = this.params.delay_ms ?? BACKGROUND_DELAY_MS;
           setTimeout(() => {
             ShellExecutionService.background(pid, sessionId, strippedCommand);
@@ -720,10 +712,50 @@ export class ShellToolInvocation extends BaseToolInvocation<
               returnDisplay: `Background process started with PID ${pid}.`,
             };
           }
+          result = await resultPromise;
+        } else {
+          // Automatic background transition for long-running / hanging commands:
+          // If a command takes longer than wait_ms_before_async (default 15s), it automatically
+          // transitions to a background task so execution is non-blocking.
+          const autoWaitMs =
+            this.params.wait_ms_before_async ?? DEFAULT_AUTO_BACKGROUND_TIMEOUT_MS;
+
+          let autoTimeoutTimer: NodeJS.Timeout | undefined;
+          const autoTimeoutPromise = new Promise<{ autoBackground: true }>(
+            (resolve) => {
+              autoTimeoutTimer = setTimeout(
+                () => resolve({ autoBackground: true }),
+                autoWaitMs,
+              );
+            },
+          );
+
+          const raceResult = await Promise.race([
+            resultPromise.then((res) => ({ autoBackground: false as const, res })),
+            autoTimeoutPromise,
+          ]);
+
+          if (autoTimeoutTimer) {
+            clearTimeout(autoTimeoutTimer);
+          }
+
+          if (raceResult.autoBackground) {
+            wasAutoBackgrounded = true;
+            ShellExecutionService.background(pid, sessionId, strippedCommand);
+            return {
+              llmContent: `Command exceeded synchronous wait limit (${Math.round(
+                autoWaitMs / 1000,
+              )}s) and was automatically moved to background task (PID: ${pid}).\nInitial output:\n${cumulativeOutput}\n\nYou can inspect its output anytime with read_background_output(pid=${pid}) or terminate it with kill_background_process(pid=${pid}).`,
+              returnDisplay: `Command automatically moved to background task (PID: ${pid}).`,
+            };
+          } else {
+            result = raceResult.res;
+          }
         }
+      } else {
+        result = await resultPromise;
       }
 
-      const result = await resultPromise;
       if (!result.backgrounded) {
         flushOutput();
       }
@@ -1064,10 +1096,10 @@ export class ShellToolInvocation extends BaseToolInvocation<
       signal.removeEventListener('abort', onAbort);
       timeoutController.signal.removeEventListener('abort', onAbort);
 
-      // Only clean up if NOT running in background.
+      // Only clean up if NOT running in background or auto-backgrounded.
       // Background processes need the temp directory and PID file to remain
       // available until they exit.
-      if (!this.params.is_background) {
+      if (!this.params.is_background && !wasAutoBackgrounded) {
         if (tempFilePath) {
           try {
             await fsPromises.unlink(tempFilePath);

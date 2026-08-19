@@ -91,7 +91,7 @@ export async function enforcePolicy(
         model,
         config: {
           responseMimeType: 'application/json',
-          responseSchema: zodToJsonSchema(EnforcementResultSchema, {
+          responseSchema: zodToJsonSchema(EnforcementResultSchema as any, {
             target: 'openApi3',
           }),
         },

@@ -33,7 +33,7 @@ import { RecordingContentGenerator } from './recordingContentGenerator.js';
 import { getVersion, resolveModel } from '../../index.js';
 import type { LlmRole } from '../telemetry/llmRole.js';
 import { ModelMappingContentGenerator } from './modelMappingContentGenerator.js';
-import { CCPA_AI_MODEL_MAPPINGS } from '../config/models.js';
+import { CCPA_AI_MODEL_MAPPINGS, DEEPSEEK_CHAT_MODEL } from '../config/models.js';
 
 /**
  * Interface abstracting the core functionalities for generating content and counting tokens.

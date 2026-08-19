@@ -67,6 +67,11 @@ export const ALL_ITEMS = [
     header: 'tokens',
     description: 'Total tokens used in the session (not shown when zero)',
   },
+  {
+    id: 'tasks',
+    header: 'tasks',
+    description: 'Active background tasks count (not shown when zero)',
+  },
 ] as const;
 
 export type FooterItemId = (typeof ALL_ITEMS)[number]['id'];
@@ -74,6 +79,7 @@ export type FooterItemId = (typeof ALL_ITEMS)[number]['id'];
 export const DEFAULT_ORDER = [
   'workspace',
   'git-branch',
+  'tasks',
   'sandbox',
   'model-name',
   'context-used',
@@ -92,6 +98,7 @@ export function deriveItemsFromLegacySettings(
   const defaults = [
     'workspace',
     'git-branch',
+    'tasks',
     'sandbox',
     'model-name',
     'quota',

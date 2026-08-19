@@ -44,19 +44,19 @@ if (process.env.CI) {
     cwd: root,
   });
 
-  // Build the rest in parallel
-  console.log('Building other workspaces in parallel...');
+  // Build the rest of workspaces
+  console.log('Building other workspaces...');
   const workspaceInfo = JSON.parse(
     execSync('npm query .workspace --json', { cwd: root, encoding: 'utf-8' }),
   );
-  const parallelWorkspaces = workspaceInfo
+  const otherWorkspaces = workspaceInfo
     .map((w) => w.name)
     .filter((name) => name !== '@google/gemini-cli-core');
 
-  execSync(
-    `npx --no-install npm-run-all --parallel ${parallelWorkspaces.map((w) => `"build -w ${w}"`).join(' ')}`,
-    { stdio: 'inherit', cwd: root },
-  );
+  for (const w of otherWorkspaces) {
+    console.log(`Building workspace ${w}...`);
+    execSync(`npm run build -w ${w}`, { stdio: 'inherit', cwd: root });
+  }
 }
 
 // also build container image if sandboxing is enabled

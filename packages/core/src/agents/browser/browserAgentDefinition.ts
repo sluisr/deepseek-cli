@@ -21,7 +21,9 @@ import {
   isPreviewModel,
   PREVIEW_GEMINI_FLASH_MODEL,
   DEFAULT_GEMINI_FLASH_MODEL,
+  DEEPSEEK_CHAT_MODEL,
 } from '../../config/models.js';
+import { AuthType } from '../../core/contentGenerator.js';
 
 /** Canonical agent name — used for routing and configuration lookup. */
 export const BROWSER_AGENT_NAME = 'browser_agent';

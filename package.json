@@ -1,6 +1,6 @@
 {
   "name": "@sluisr/deepseek-cli",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "engines": {
     "node": ">=20.0.0"
   },

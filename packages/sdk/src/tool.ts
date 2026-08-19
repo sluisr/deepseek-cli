@@ -158,7 +158,7 @@ export class SdkTool<T extends z.ZodTypeAny> extends BaseDeclarativeTool<
       definition.name,
       definition.description,
       Kind.Other,
-      zodToJsonSchema(definition.inputSchema),
+      zodToJsonSchema(definition.inputSchema as any),
       messageBus,
     );
   }

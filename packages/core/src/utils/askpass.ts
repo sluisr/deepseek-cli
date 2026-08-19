@@ -8,12 +8,47 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
+/**
+ * Session-scoped sudo password (in-memory only, never persisted to disk).
+ * Set via `$sudo:PASSWORD` prefix in the CLI prompt.
+ */
+let sessionSudoPassword: string | null = null;
+
+/**
+ * Store the sudo password in session memory.
+ * The password is NEVER sent to the DeepSeek API, written to disk, or logged.
+ */
+export function setSudoPassword(password: string): void {
+  sessionSudoPassword = password;
+}
+
+/**
+ * Retrieve the stored sudo password, or null if none has been set.
+ */
+export function getSudoPassword(): string | null {
+  return sessionSudoPassword;
+}
+
+/**
+ * Clear the stored sudo password (called on session exit).
+ */
+export function clearSudoPassword(): void {
+  sessionSudoPassword = null;
+}
+
 const ASKPASS_SCRIPT_CONTENT = `#!/usr/bin/env node
 const fs = require('fs');
 const tty = require('tty');
 
 const promptMsg = process.argv[2] || 'Password: ';
 
+// If DEEPSEEK_SUDO_PASSWORD is set, echo it immediately (non-interactive mode)
+if (process.env.DEEPSEEK_SUDO_PASSWORD) {
+  process.stdout.write(process.env.DEEPSEEK_SUDO_PASSWORD);
+  process.exit(0);
+}
+
+// Otherwise, fall back to interactive TTY prompt
 try {
   const ttyFdIn = fs.openSync('/dev/tty', 'r');
   const ttyFdOut = fs.openSync('/dev/tty', 'w');

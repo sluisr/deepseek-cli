@@ -168,6 +168,67 @@ describe('modelCommand', () => {
         }),
       );
     });
+    it('should support direct shortcut /model pro', async () => {
+      const mockSetModel = vi.fn();
+      mockContext.services.agentContext = {
+        setModel: mockSetModel,
+        getHasAccessToPreviewModel: vi.fn().mockReturnValue(true),
+        getUserId: vi.fn().mockReturnValue('test-user'),
+        getUsageStatisticsEnabled: vi.fn().mockReturnValue(true),
+        getSessionId: vi.fn().mockReturnValue('test-session'),
+        getContentGeneratorConfig: vi
+          .fn()
+          .mockReturnValue({ authType: 'test-auth' }),
+        isInteractive: vi.fn().mockReturnValue(true),
+        getExperiments: vi.fn().mockReturnValue({ experimentIds: [] }),
+        getPolicyEngine: vi.fn().mockReturnValue({
+          getApprovalMode: vi.fn().mockReturnValue('auto'),
+        }),
+        get config() {
+          return this;
+        },
+      } as unknown as Config;
+
+      await modelCommand.action!(mockContext, 'pro');
+      expect(mockSetModel).toHaveBeenCalledWith('deepseek-v4-pro', true);
+      expect(mockContext.ui.addItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: MessageType.INFO,
+          text: expect.stringContaining('Model set to deepseek-v4-pro'),
+        }),
+      );
+    });
+
+    it('should support direct shortcut /model flash', async () => {
+      const mockSetModel = vi.fn();
+      mockContext.services.agentContext = {
+        setModel: mockSetModel,
+        getHasAccessToPreviewModel: vi.fn().mockReturnValue(true),
+        getUserId: vi.fn().mockReturnValue('test-user'),
+        getUsageStatisticsEnabled: vi.fn().mockReturnValue(true),
+        getSessionId: vi.fn().mockReturnValue('test-session'),
+        getContentGeneratorConfig: vi
+          .fn()
+          .mockReturnValue({ authType: 'test-auth' }),
+        isInteractive: vi.fn().mockReturnValue(true),
+        getExperiments: vi.fn().mockReturnValue({ experimentIds: [] }),
+        getPolicyEngine: vi.fn().mockReturnValue({
+          getApprovalMode: vi.fn().mockReturnValue('auto'),
+        }),
+        get config() {
+          return this;
+        },
+      } as unknown as Config;
+
+      await modelCommand.action!(mockContext, 'flash');
+      expect(mockSetModel).toHaveBeenCalledWith('deepseek-v4-flash', true);
+      expect(mockContext.ui.addItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: MessageType.INFO,
+          text: expect.stringContaining('Model set to deepseek-v4-flash'),
+        }),
+      );
+    });
   });
 
   it('should have the correct name and description', () => {
@@ -175,3 +236,4 @@ describe('modelCommand', () => {
     expect(modelCommand.description).toBe('Manage model configuration');
   });
 });
+

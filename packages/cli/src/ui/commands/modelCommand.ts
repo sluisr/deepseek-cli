@@ -1,12 +1,8 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import {
   ModelSlashCommandEvent,
   logModelSlashCommand,
+  DEEPSEEK_CHAT_MODEL,
+  DEEPSEEK_REASONER_MODEL,
 } from '@google/gemini-cli-core';
 import {
   type CommandContext,
@@ -14,6 +10,17 @@ import {
   type SlashCommand,
 } from './types.js';
 import { MessageType } from '../types.js';
+
+function resolveModelShortcut(input: string): string {
+  const lower = input.toLowerCase().trim();
+  if (lower === 'pro' || lower === 'v4-pro' || lower === 'deepseek-pro') {
+    return DEEPSEEK_REASONER_MODEL;
+  }
+  if (lower === 'flash' || lower === 'v4-flash' || lower === 'deepseek-flash') {
+    return DEEPSEEK_CHAT_MODEL;
+  }
+  return input.trim();
+}
 
 const setModelCommand: SlashCommand = {
   name: 'set',
@@ -31,7 +38,7 @@ const setModelCommand: SlashCommand = {
       return;
     }
 
-    const modelName = parts[0];
+    const modelName = resolveModelShortcut(parts[0]);
     const persist = parts.includes('--persist');
 
     if (context.services.agentContext?.config) {
@@ -69,6 +76,16 @@ export const modelCommand: SlashCommand = {
   kind: CommandKind.BUILT_IN,
   autoExecute: false,
   subCommands: [manageModelCommand, setModelCommand],
-  action: async (context: CommandContext, args: string) =>
-    manageModelCommand.action!(context, args),
+  action: async (context: CommandContext, args: string) => {
+    const trimmed = args.trim();
+    if (!trimmed) {
+      return manageModelCommand.action!(context, args);
+    }
+    // Direct shortcut support: `/model pro`, `/model flash`, `/model deepseek-v4-pro`
+    if (trimmed.startsWith('set ')) {
+      return setModelCommand.action!(context, trimmed.slice(4));
+    }
+    return setModelCommand.action!(context, trimmed);
+  },
 };
+

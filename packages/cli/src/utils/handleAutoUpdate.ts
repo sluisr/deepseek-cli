@@ -11,11 +11,7 @@ import { updateEventEmitter } from './updateEventEmitter.js';
 import { MessageType, type HistoryItem } from '../ui/types.js';
 import { spawnWrapper } from './spawnWrapper.js';
 import type { spawn } from 'node:child_process';
-import {
-  debugLogger,
-  getChannelFromVersion,
-  RELEASE_CHANNEL_STABILITY,
-} from '@google/gemini-cli-core';
+import { debugLogger } from '@google/gemini-cli-core';
 
 let _updateInProgress = false;
 

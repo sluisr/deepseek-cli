@@ -245,6 +245,12 @@ import {
   MCP_TOOL_PREFIX,
 } from './mcp-tool.js';
 
+export const LIST_BACKGROUND_PROCESSES_TOOL_NAME =
+  'list_background_processes';
+export const READ_BACKGROUND_OUTPUT_TOOL_NAME = 'read_background_output';
+export const KILL_BACKGROUND_PROCESS_TOOL_NAME = 'kill_background_process';
+export const WRITE_BACKGROUND_INPUT_TOOL_NAME = 'write_background_input';
+
 export const ALL_BUILTIN_TOOL_NAMES = [
   GLOB_TOOL_NAME,
   WRITE_TODOS_TOOL_NAME,
@@ -273,6 +279,10 @@ export const ALL_BUILTIN_TOOL_NAMES = [
   AGENT_TOOL_NAME,
   READ_MCP_RESOURCE_TOOL_NAME,
   LIST_MCP_RESOURCES_TOOL_NAME,
+  LIST_BACKGROUND_PROCESSES_TOOL_NAME,
+  READ_BACKGROUND_OUTPUT_TOOL_NAME,
+  KILL_BACKGROUND_PROCESS_TOOL_NAME,
+  WRITE_BACKGROUND_INPUT_TOOL_NAME,
 ] as const;
 
 /**

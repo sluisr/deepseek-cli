@@ -128,6 +128,7 @@ export * from './utils/checkpointUtils.js';
 export * from './utils/secure-browser-launcher.js';
 export * from './utils/apiConversionUtils.js';
 export * from './utils/channel.js';
+export { setSudoPassword, getSudoPassword, clearSudoPassword } from './utils/askpass.js';
 export * from './utils/constants.js';
 export * from './utils/sessionUtils.js';
 export * from './utils/cache.js';

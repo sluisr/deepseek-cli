@@ -50,9 +50,11 @@ class ApplyPatchInvocation extends BaseToolInvocation<
     super(params, messageBus, APPLY_PATCH_TOOL_NAME, APPLY_PATCH_DISPLAY_NAME);
   }
 
-  protected override async executeImpl(
-    _options?: ExecuteOptions,
-  ): Promise<ApplyPatchResult> {
+  getDescription(): string {
+    return 'apply patch';
+  }
+
+  async execute(_options?: ExecuteOptions): Promise<ApplyPatchResult> {
     const rawPatch = this.params.patch;
     if (!rawPatch || !rawPatch.trim()) {
       return {
@@ -60,7 +62,7 @@ class ApplyPatchInvocation extends BaseToolInvocation<
         returnDisplay: 'Empty patch provided.',
         error: {
           message: 'Patch content cannot be empty.',
-          type: ToolErrorType.INVALID_TOOL_ARGUMENTS,
+          type: ToolErrorType.INVALID_TOOL_PARAMS,
         },
       };
     }
@@ -78,7 +80,7 @@ class ApplyPatchInvocation extends BaseToolInvocation<
           returnDisplay: 'Failed to parse patch.',
           error: {
             message: 'Invalid patch format.',
-            type: ToolErrorType.INVALID_TOOL_ARGUMENTS,
+            type: ToolErrorType.INVALID_TOOL_PARAMS,
           },
         };
       }
@@ -145,7 +147,7 @@ class ApplyPatchInvocation extends BaseToolInvocation<
         returnDisplay: 'Patch application failed.',
         error: {
           message: msg,
-          type: ToolErrorType.EDIT_FAILED,
+          type: ToolErrorType.EXECUTION_FAILED,
         },
       };
     }

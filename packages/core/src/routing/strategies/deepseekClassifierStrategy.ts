@@ -35,6 +35,28 @@ Score guide:
 Respond ONLY with valid JSON in this exact format:
 {"score": <number 1-100>, "reason": "<one sentence>"}`;
 
+const TRIVIAL_PROMPTS = new Set([
+  'aslo',
+  'hazlo',
+  'hazlo tú',
+  'si',
+  'sí',
+  's',
+  'no',
+  'ok',
+  'okay',
+  'dale',
+  'sigo',
+  'continua',
+  'continúa',
+  'continue',
+  'yes',
+  'y',
+  'n',
+  'go',
+  'proceed',
+]);
+
 export class DeepSeekClassifierStrategy implements RoutingStrategy {
   readonly name = 'deepseek_classifier';
 
@@ -49,22 +71,52 @@ export class DeepSeekClassifierStrategy implements RoutingStrategy {
       return null;
     }
 
+    // If the user already selected reasoning / pro mode, don't downgrade via classifier
+    if (model.includes('reasoner') || model.includes('pro')) {
+      return null;
+    }
+
     const apiKey =
       process.env['DEEPSEEK_API_KEY'] || (await loadDeepSeekApiKey());
     if (!apiKey) {
       return null;
     }
 
+    const userText =
+      typeof context.request === 'string'
+        ? context.request
+        : Array.isArray(context.request)
+          ? context.request
+              .map((p: any) => (typeof p === 'string' ? p : (p.text ?? '')))
+              .join(' ')
+          : String(context.request);
+
+    const trimmedText = userText.trim().toLowerCase();
+    if (!trimmedText) {
+      return null;
+    }
+
+    // Fast-path: simple confirmations and single words don't need a 1.5s network roundtrip
+    if (
+      TRIVIAL_PROMPTS.has(trimmedText) ||
+      (trimmedText.length <= 4 && /^[a-z0-9áéíóúñ\s]+$/.test(trimmedText))
+    ) {
+      return {
+        model: DEEPSEEK_CHAT_MODEL,
+        metadata: {
+          source: 'DeepSeekClassifier',
+          latencyMs: 0,
+          reasoning: '[FastPath] Trivial prompt or continuation',
+        },
+      };
+    }
+
     const startTime = Date.now();
     try {
-      const userText =
-        typeof context.request === 'string'
-          ? context.request
-          : Array.isArray(context.request)
-            ? context.request
-                .map((p: any) => (typeof p === 'string' ? p : (p.text ?? '')))
-                .join(' ')
-            : String(context.request);
+      const timeoutSignal = AbortSignal.timeout(2500);
+      const combinedSignal = context.signal
+        ? AbortSignal.any([context.signal, timeoutSignal])
+        : timeoutSignal;
 
       const response = await fetch('https://api.deepseek.com/chat/completions', {
         method: 'POST',
@@ -84,13 +136,12 @@ export class DeepSeekClassifierStrategy implements RoutingStrategy {
           stream: false,
           thinking: { type: 'disabled' },
         }),
-        signal: context.signal,
+        signal: combinedSignal,
       });
 
       if (!response.ok) {
         const errBody = await response.text();
         debugLogger.warn(`[DeepSeekRouter] Classification call failed: ${response.status} ${errBody}`);
-        console.error(`[DeepSeekRouter] Classification HTTP error: ${response.status}`);
         return null;
       }
 
@@ -104,7 +155,7 @@ export class DeepSeekClassifierStrategy implements RoutingStrategy {
       try {
         parsed = JSON.parse(jsonText);
       } catch (e) {
-        console.error(`[DeepSeekRouter] Failed to parse classifier JSON: "${rawText}"`);
+        debugLogger.warn(`[DeepSeekRouter] Failed to parse classifier JSON: "${rawText}"`);
         return null;
       }
       const score: number = Number(parsed.score ?? 0);
@@ -125,9 +176,16 @@ export class DeepSeekClassifierStrategy implements RoutingStrategy {
           reasoning: `[Score: ${score}/${COMPLEXITY_THRESHOLD}] ${parsed.reason ?? ''}`,
         },
       };
-    } catch (error) {
+    } catch (error: any) {
+      if (context.signal?.aborted || error?.name === 'AbortError') {
+        debugLogger.log(`[DeepSeekRouter] Classification aborted.`);
+        return null;
+      }
+      if (error?.name === 'TimeoutError') {
+        debugLogger.warn(`[DeepSeekRouter] Classification timed out (2.5s), using default model.`);
+        return null;
+      }
       debugLogger.warn(`[DeepSeekRouter] Classification failed, using default:`, error);
-      console.error(`[DeepSeekRouter] Caught error:`, error);
       return null;
     }
   }

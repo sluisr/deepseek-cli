@@ -263,27 +263,33 @@ export class Scheduler {
     if (this.isCancelling) return;
     this.isCancelling = true;
 
-    // Clear scheduler request queue
-    while (this.requestQueue.length > 0) {
-      const next = this.requestQueue.shift();
-      next?.reject(new Error('Operation cancelled by user'));
-    }
+    try {
+      // Clear scheduler request queue
+      while (this.requestQueue.length > 0) {
+        const next = this.requestQueue.shift();
+        next?.reject(new Error('Operation cancelled by user'));
+      }
 
-    // Cancel active calls
-    const activeCalls = this.state.allActiveCalls;
-    for (const activeCall of activeCalls) {
-      if (!this.isTerminal(activeCall.status)) {
-        this.state.updateStatus(
-          activeCall.request.callId,
-          CoreToolCallStatus.Cancelled,
-          'Operation cancelled by user',
-        );
-        this.state.finalizeCall(activeCall.request.callId);
+      // Cancel active calls
+      const activeCalls = this.state.allActiveCalls;
+      for (const activeCall of activeCalls) {
+        if (!this.isTerminal(activeCall.status)) {
+          this.state.updateStatus(
+            activeCall.request.callId,
+            CoreToolCallStatus.Cancelled,
+            'Operation cancelled by user',
+          );
+          this.state.finalizeCall(activeCall.request.callId);
+        }
+      }
+
+      // Clear queue
+      this.state.cancelAllQueued('Operation cancelled by user');
+    } finally {
+      if (!this.isProcessing) {
+        this.isCancelling = false;
       }
     }
-
-    // Clear queue
-    this.state.cancelAllQueued('Operation cancelled by user');
   }
 
   get completedCalls(): CompletedToolCall[] {
@@ -348,6 +354,7 @@ export class Scheduler {
       return this.state.completedBatch;
     } finally {
       this.isProcessing = false;
+      this.isCancelling = false;
       this.state.clearBatch();
       this._processNextInRequestQueue();
     }

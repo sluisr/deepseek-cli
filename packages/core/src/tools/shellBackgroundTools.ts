@@ -6,6 +6,7 @@
 
 import fs from 'node:fs';
 import { ShellExecutionService } from '../services/shellExecutionService.js';
+import { ExecutionLifecycleService } from '../services/executionLifecycleService.js';
 import {
   BaseDeclarativeTool,
   BaseToolInvocation,
@@ -292,6 +293,246 @@ export class ReadBackgroundOutputTool extends BaseDeclarativeTool<
     messageBus: MessageBus,
   ) {
     return new ReadBackgroundOutputInvocation(
+      this.context,
+      params,
+      messageBus,
+      this.name,
+    );
+  }
+}
+
+// --- kill_background_process ---
+
+interface KillBackgroundProcessParams {
+  pid: number;
+}
+
+class KillBackgroundProcessInvocation extends BaseToolInvocation<
+  KillBackgroundProcessParams,
+  ToolResult
+> {
+  constructor(
+    private readonly context: AgentLoopContext,
+    params: KillBackgroundProcessParams,
+    messageBus: MessageBus,
+    toolName?: string,
+    toolDisplayName?: string,
+  ) {
+    super(params, messageBus, toolName, toolDisplayName);
+  }
+
+  getDescription(): string {
+    return `Terminating background process with PID ${this.params.pid}`;
+  }
+
+  async execute({ abortSignal: _signal }: ExecuteOptions): Promise<ToolResult> {
+    const pid = this.params.pid;
+    const sessionId = this.context.config.getSessionId();
+    const processes = ShellExecutionService.listBackgroundProcesses(sessionId);
+    const targetProcess = processes.find((p) => p.pid === pid);
+
+    if (!targetProcess) {
+      return {
+        llmContent: `Background process with PID ${pid} was not found in this session.`,
+        returnDisplay: `PID ${pid} not found.`,
+        error: {
+          message: `Process ${pid} not found`,
+          type: ToolErrorType.EXECUTION_FAILED,
+        },
+      };
+    }
+
+    if (
+      targetProcess.status === 'exited' &&
+      !ExecutionLifecycleService.isActive(pid)
+    ) {
+      return {
+        llmContent: `Background process with PID ${pid} has already exited.`,
+        returnDisplay: `PID ${pid} already exited.`,
+      };
+    }
+
+    try {
+      ExecutionLifecycleService.kill(pid);
+      return {
+        llmContent: `Successfully terminated background process with PID ${pid} (\`${targetProcess.command}\`).`,
+        returnDisplay: `Killed process ${pid}.`,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        llmContent: `Failed to terminate background process ${pid}: ${errorMessage}`,
+        returnDisplay: `Failed to kill PID ${pid}.`,
+        error: {
+          message: errorMessage,
+          type: ToolErrorType.EXECUTION_FAILED,
+        },
+      };
+    }
+  }
+}
+
+export class KillBackgroundProcessTool extends BaseDeclarativeTool<
+  KillBackgroundProcessParams,
+  ToolResult
+> {
+  static readonly Name = 'kill_background_process';
+
+  constructor(
+    private readonly context: AgentLoopContext,
+    messageBus: MessageBus,
+  ) {
+    super(
+      KillBackgroundProcessTool.Name,
+      'Kill Background Process',
+      'Terminates a background shell process or hung task by its process ID (PID).',
+      Kind.Execute,
+      {
+        type: 'object',
+        properties: {
+          pid: {
+            type: 'integer',
+            description:
+              'The process ID (PID) of the background process to terminate.',
+          },
+        },
+        required: ['pid'],
+      },
+      messageBus,
+    );
+  }
+
+  protected createInvocation(
+    params: KillBackgroundProcessParams,
+    messageBus: MessageBus,
+  ) {
+    return new KillBackgroundProcessInvocation(
+      this.context,
+      params,
+      messageBus,
+      this.name,
+    );
+  }
+}
+
+// --- write_background_input ---
+
+interface WriteBackgroundInputParams {
+  pid: number;
+  input: string;
+}
+
+class WriteBackgroundInputInvocation extends BaseToolInvocation<
+  WriteBackgroundInputParams,
+  ToolResult
+> {
+  constructor(
+    private readonly context: AgentLoopContext,
+    params: WriteBackgroundInputParams,
+    messageBus: MessageBus,
+    toolName?: string,
+    toolDisplayName?: string,
+  ) {
+    super(params, messageBus, toolName, toolDisplayName);
+  }
+
+  getDescription(): string {
+    return `Sending input to background process with PID ${this.params.pid}`;
+  }
+
+  async execute({ abortSignal: _signal }: ExecuteOptions): Promise<ToolResult> {
+    const pid = this.params.pid;
+    const sessionId = this.context.config.getSessionId();
+    const processes = ShellExecutionService.listBackgroundProcesses(sessionId);
+    const targetProcess = processes.find((p) => p.pid === pid);
+
+    if (!targetProcess) {
+      return {
+        llmContent: `Background process with PID ${pid} was not found in this session.`,
+        returnDisplay: `PID ${pid} not found.`,
+        error: {
+          message: `Process ${pid} not found`,
+          type: ToolErrorType.EXECUTION_FAILED,
+        },
+      };
+    }
+
+    if (!ExecutionLifecycleService.isActive(pid)) {
+      return {
+        llmContent: `Background process with PID ${pid} is not active.`,
+        returnDisplay: `PID ${pid} is not active.`,
+        error: {
+          message: `Process ${pid} is not active`,
+          type: ToolErrorType.EXECUTION_FAILED,
+        },
+      };
+    }
+
+    try {
+      const formattedInput = this.params.input.endsWith('\n')
+        ? this.params.input
+        : `${this.params.input}\n`;
+
+      ExecutionLifecycleService.writeInput(pid, formattedInput);
+      return {
+        llmContent: `Successfully sent input to background process ${pid}.`,
+        returnDisplay: `Sent input to PID ${pid}.`,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        llmContent: `Failed to write input to background process ${pid}: ${errorMessage}`,
+        returnDisplay: `Failed to write input to PID ${pid}.`,
+        error: {
+          message: errorMessage,
+          type: ToolErrorType.EXECUTION_FAILED,
+        },
+      };
+    }
+  }
+}
+
+export class WriteBackgroundInputTool extends BaseDeclarativeTool<
+  WriteBackgroundInputParams,
+  ToolResult
+> {
+  static readonly Name = 'write_background_input';
+
+  constructor(
+    private readonly context: AgentLoopContext,
+    messageBus: MessageBus,
+  ) {
+    super(
+      WriteBackgroundInputTool.Name,
+      'Write Background Input',
+      'Sends stdin input to an active background process (e.g. answering interactive prompts or sending commands).',
+      Kind.Execute,
+      {
+        type: 'object',
+        properties: {
+          pid: {
+            type: 'integer',
+            description:
+              'The process ID (PID) of the active background process.',
+          },
+          input: {
+            type: 'string',
+            description: 'The text string to send to the process stdin.',
+          },
+        },
+        required: ['pid', 'input'],
+      },
+      messageBus,
+    );
+  }
+
+  protected createInvocation(
+    params: WriteBackgroundInputParams,
+    messageBus: MessageBus,
+  ) {
+    return new WriteBackgroundInputInvocation(
       this.context,
       params,
       messageBus,
