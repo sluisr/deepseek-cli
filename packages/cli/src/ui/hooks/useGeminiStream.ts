@@ -1278,7 +1278,7 @@ export const useGeminiStream = (
 
   const handleUserCancelledEvent = useCallback(
     (userMessageTimestamp: number) => {
-      if (turnCancelledRef.current) {
+      if (turnCancelledRef.current || !isRespondingRef.current) {
         return;
       }
       if (pendingHistoryItemRef.current) {
@@ -1312,6 +1312,7 @@ export const useGeminiStream = (
     },
     [
       addItem,
+      isRespondingRef,
       pendingHistoryItemRef,
       setPendingHistoryItem,
       setThought,
@@ -1640,10 +1641,16 @@ export const useGeminiStream = (
       stream: AsyncIterable<GeminiEvent>,
       userMessageTimestamp: number,
       signal: AbortSignal,
+      queryId?: string,
     ): Promise<StreamProcessingStatus> => {
       let geminiMessageBuffer = '';
       const toolCallRequests: ToolCallRequestInfo[] = [];
       for await (const event of stream) {
+        // If this query has been cancelled or superseded by a newer query, drop all stale events immediately
+        if (signal?.aborted || (queryId && activeQueryIdRef.current !== queryId)) {
+          return StreamProcessingStatus.UserCancelled;
+        }
+
         if (
           event.type !== ServerGeminiEventType.Thought &&
           thoughtRef.current !== null
@@ -1859,6 +1866,7 @@ export const useGeminiStream = (
                 stream,
                 userMessageTimestamp,
                 abortSignal,
+                queryId,
               );
 
               if (processingStatus === StreamProcessingStatus.UserCancelled) {

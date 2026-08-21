@@ -1029,6 +1029,20 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       throw new Error('DeepSeek API error: Response body is null');
     }
 
+    const onStreamAbort = () => {
+      try {
+        reader?.cancel().catch(() => {});
+      } catch {}
+    };
+
+    if (streamUserSignal) {
+      if (streamUserSignal.aborted) {
+        onStreamAbort();
+      } else {
+        streamUserSignal.addEventListener('abort', onStreamAbort, { once: true });
+      }
+    }
+
     const decoder = new TextDecoder();
 
     async function* stream() {
@@ -1046,6 +1060,10 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       const CHUNK_TIMEOUT_MS = 45000; // 45s idle timeout between SSE chunks
       try {
         while (true) {
+          if (streamUserSignal?.aborted) {
+            break;
+          }
+
           let timeoutHandle: any;
           const timeoutPromise = new Promise<never>((_, reject) => {
             timeoutHandle = setTimeout(() => {
@@ -1363,6 +1381,9 @@ export class DeepSeekContentGenerator implements ContentGenerator {
           yield finalChunk as GenerateContentResponse;
         }
       } finally {
+        if (streamUserSignal) {
+          streamUserSignal.removeEventListener('abort', onStreamAbort);
+        }
         try {
           reader?.releaseLock();
         } catch {
