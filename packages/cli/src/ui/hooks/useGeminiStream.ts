@@ -917,16 +917,14 @@ export const useGeminiStream = (
       // If it was a full cancellation, add the info message now.
       // Otherwise, we let handleCompletedTools figure out the next step,
       // which might involve sending partial results back to the model.
-      if (isFullCancellation) {
-        // If shell is active, we delay this message to ensure correct ordering
-        // (Shell item first, then Info message).
-        if (!activeShellPtyId) {
+      if (!activeShellPtyId) {
+        if (isFullCancellation) {
           addItem({
             type: MessageType.INFO,
             text: 'Request cancelled.',
           });
-          setIsResponding(false);
         }
+        setIsResponding(false);
       }
 
       onCancelSubmit(false, clearBuffer);
@@ -1791,8 +1789,9 @@ export const useGeminiStream = (
               streamingState === StreamingState.Responding ||
               streamingState === StreamingState.WaitingForConfirmation) &&
             !options?.isContinuation
-          )
-            return;
+          ) {
+            cancelOngoingRequest(false);
+          }
           const queryId = `${Date.now()}-${Math.random()}`;
           activeQueryIdRef.current = queryId;
 

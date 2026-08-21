@@ -137,7 +137,7 @@ async function fetchWithRetry(
   url: string,
   options: RequestInit,
   maxRetries = DEFAULT_MAX_RETRIES,
-  attemptTimeoutMs = 35000,
+  attemptTimeoutMs = 90000,
 ): Promise<Response> {
   let attempt = 0;
   while (true) {
@@ -653,15 +653,15 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       body.response_format = { type: 'json_object' };
     }
 
-    // Apply temperature and reasoning_effort correctly per model:
-    // - V4-Flash (deepseek-chat): supports temperature AND reasoning_effort (thinking mode)
-    // - V4-Pro (deepseek-reasoner): always-on deep reasoning, no extra params
+    // Apply temperature and parameters strictly per DeepSeek official spec:
+    // - deepseek-chat: supports temperature (0-2.0) and top_p (0-1.0).
+    // - deepseek-reasoner: temperature, top_p, penalty are NOT supported by DeepSeek API (returns 400).
     const resolvedModel = this.resolveDeepSeekModel(request.model);
     const isProModel =
       resolvedModel.includes('pro') || resolvedModel.includes('reasoner');
 
     if (!isProModel) {
-      // Flash: send temperature (dynamic in real-time from config or request config)
+      // Flash / Chat: send temperature and top_p
       const currentTemp = this.config?.getTemperature?.() ?? this.temperature;
       const temp =
         request.config?.temperature !== undefined
@@ -669,86 +669,19 @@ export class DeepSeekContentGenerator implements ContentGenerator {
           : currentTemp;
       body.temperature = temp;
 
-      // Flash: send reasoning_effort (dynamic in real-time from config)
-      const currentEffort =
-        this.config?.getReasoningEffort?.() ?? this.reasoningEffort;
-      body.reasoning_effort = currentEffort;
-
       if (request.config?.topP !== undefined) {
         body.top_p = request.config.topP;
       }
     } else {
-      // Pro: send pro reasoning_effort (dynamic in real-time from config: low, medium, high, max)
-      const proEffort =
-        (this.config as any)?.getProReasoningEffort?.() ?? 'high';
-      body.reasoning_effort = proEffort;
-      body.thinking = { type: 'enabled' };
+      // Pro / Reasoner: DeepSeek R1 strictly forbids temperature and top_p
+      delete body.temperature;
+      delete body.top_p;
+      delete body.reasoning_effort;
+      delete body.thinking;
     }
 
     if (request.config?.maxOutputTokens !== undefined) {
       body.max_tokens = request.config.maxOutputTokens;
-    }
-
-    // Thinking mode & reasoning effort configuration (DeepSeek V4-Pro & V4-Flash)
-    const isReasoner =
-      body.model.includes('reasoner') || body.model.includes('pro');
-    const thinkingConfig = request.config?.thinkingConfig;
-    const envReasoningEffort = process.env[
-      'DEEPSEEK_REASONING_EFFORT'
-    ]?.toLowerCase();
-    const explicitEffort =
-      (request.config as any)?.reasoning_effort ||
-      (request.config as any)?.reasoningEffort;
-
-    if (thinkingConfig?.thinkingBudget === 0) {
-      body.thinking = { type: 'disabled' };
-      delete body.reasoning_effort;
-    } else {
-      let effort: 'low' | 'high' | 'max' | undefined = undefined;
-
-      if (
-        explicitEffort &&
-        ['low', 'high', 'max', 'medium', 'xhigh'].includes(explicitEffort)
-      ) {
-        effort =
-          explicitEffort === 'low'
-            ? 'low'
-            : explicitEffort === 'max'
-              ? 'max'
-              : 'high';
-      } else if (
-        envReasoningEffort &&
-        ['low', 'high', 'max'].includes(envReasoningEffort)
-      ) {
-        effort = envReasoningEffort as 'low' | 'high' | 'max';
-      } else if (thinkingConfig?.thinkingLevel) {
-        const levelStr = String(thinkingConfig.thinkingLevel).toLowerCase();
-        if (levelStr.includes('low') || levelStr === 'minimal') {
-          effort = 'low';
-        } else if (levelStr.includes('max') || levelStr.includes('extreme')) {
-          effort = 'max';
-        } else {
-          effort = 'high';
-        }
-      } else if (
-        typeof thinkingConfig?.thinkingBudget === 'number' &&
-        thinkingConfig.thinkingBudget > 0
-      ) {
-        if (thinkingConfig.thinkingBudget <= 2048) {
-          effort = 'low';
-        } else if (thinkingConfig.thinkingBudget >= 16384) {
-          effort = 'max';
-        } else {
-          effort = 'high';
-        }
-      } else if (isReasoner) {
-        effort = 'high';
-      }
-
-      if (effort) {
-        body.reasoning_effort = effort;
-        body.thinking = { type: 'enabled' };
-      }
     }
 
     const pendingPrefix = (this.config as any)?.getAssistantPrefix?.();
@@ -1062,7 +995,7 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       let latestUsage: any = undefined;
       let isFinalChunkEmitted = false;
 
-      const CHUNK_TIMEOUT_MS = 45000; // 45s idle timeout between SSE chunks
+      const CHUNK_TIMEOUT_MS = 90000; // 90s idle timeout between SSE chunks
       try {
         while (true) {
           if (streamUserSignal?.aborted) {
