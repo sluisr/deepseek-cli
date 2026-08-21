@@ -1544,6 +1544,8 @@ export class GeminiChat {
       id = this.chatRecordingService.recordSyntheticMessage(
         'gemini',
         consolidatedParts,
+        undefined,
+        model,
       );
     }
 

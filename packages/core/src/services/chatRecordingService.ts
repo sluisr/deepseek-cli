@@ -724,9 +724,10 @@ export class ChatRecordingService {
     type: ConversationRecordExtra['type'],
     content: PartListUnion,
     id?: string,
+    model?: string,
   ): string {
     return this.recordMessage({
-      model: undefined,
+      model,
       type,
       content,
       id,

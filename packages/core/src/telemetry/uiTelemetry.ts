@@ -226,7 +226,7 @@ export class UiTelemetryService extends EventEmitter {
 
     for (const message of conversation.messages) {
       if (message.type === 'gemini') {
-        const model = message.model || 'unknown';
+        const model = message.model || 'deepseek-v4-flash';
         const modelMetrics = this.getOrCreateModelMetrics(model);
 
         // Restore API request stats

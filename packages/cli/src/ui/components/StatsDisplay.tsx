@@ -99,6 +99,9 @@ const ModelUsageTable: React.FC<ModelUsageTableProps> = ({ models }) => {
   const rows: ModelRow[] = [];
 
   Object.entries(models).forEach(([name, metrics]) => {
+    if (name === 'unknown' && metrics.tokens.prompt === 0) {
+      return;
+    }
     rows.push({
       name,
       displayName: getDisplayString(name),
