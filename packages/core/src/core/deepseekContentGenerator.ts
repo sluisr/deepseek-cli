@@ -898,6 +898,11 @@ export class DeepSeekContentGenerator implements ContentGenerator {
         totalTokenCount: usage.total_tokens,
         cachedContentTokenCount: usage.prompt_cache_hit_tokens,
       },
+      modelVersion:
+        deepseekResponse.model?.includes('reasoner') ||
+        deepseekResponse.model?.includes('pro')
+          ? 'deepseek-v4-pro'
+          : 'deepseek-v4-flash',
     };
 
     // Expose functionCalls for turn.ts compatibility (plain property, not class getter)
@@ -1249,6 +1254,11 @@ export class DeepSeekContentGenerator implements ContentGenerator {
                         },
                       }
                     : {}),
+                  modelVersion:
+                    body.model?.includes('reasoner') ||
+                    body.model?.includes('pro')
+                      ? 'deepseek-v4-pro'
+                      : 'deepseek-v4-flash',
                 };
 
                 if (fnCalls.length > 0) {
@@ -1346,6 +1356,11 @@ export class DeepSeekContentGenerator implements ContentGenerator {
                   },
                 }
               : {}),
+            modelVersion:
+              body.model?.includes('reasoner') ||
+              body.model?.includes('pro')
+                ? 'deepseek-v4-pro'
+                : 'deepseek-v4-flash',
           };
 
           if (fnCalls.length > 0) {

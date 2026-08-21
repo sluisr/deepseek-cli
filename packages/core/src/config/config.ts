@@ -3736,7 +3736,9 @@ export class Config implements McpContext, AgentLoopContext {
     })();
     // Used to set default flash models based on access
     // TODO: Remove once the experiment for 3_5 flash rollut can be cleaned up.
-    if (hasAccess) {
+    if (authType === AuthType.USE_DEEPSEEK) {
+      setFlashModels('deepseek-v4-flash', 'deepseek-v4-flash');
+    } else if (hasAccess) {
       // Gemini API key users should have the ability to manually select the
       // old preview flash model.
       if (authType === AuthType.USE_GEMINI) {

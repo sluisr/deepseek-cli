@@ -31,7 +31,7 @@ import {
   logApiRequest,
   logApiResponse,
 } from '../telemetry/loggers.js';
-import type { ContentGenerator } from './contentGenerator.js';
+import { AuthType, type ContentGenerator } from './contentGenerator.js';
 import { CodeAssistServer } from '../code_assist/server.js';
 import { toContents } from '../code_assist/converter.js';
 import { isStructuredError } from '../utils/quotaErrorDetection.js';
@@ -399,10 +399,18 @@ export class LoggingContentGenerator implements ContentGenerator {
           spanMetadata.attributes[GEN_AI_USAGE_OUTPUT_TOKENS] =
             response.usageMetadata?.candidatesTokenCount ?? 0;
           const durationMs = Date.now() - startTime;
+          const effectiveModel =
+            response.modelVersion ||
+            (this.config.getContentGeneratorConfig()?.authType ===
+            AuthType.USE_DEEPSEEK
+              ? req.model.includes('reasoner') || req.model.includes('pro')
+                ? 'deepseek-v4-pro'
+                : 'deepseek-v4-flash'
+              : req.model);
           this._logApiResponse(
             contents,
             durationMs,
-            response.modelVersion || req.model,
+            effectiveModel,
             userPromptId,
             role,
             response.responseId,
@@ -548,10 +556,18 @@ export class LoggingContentGenerator implements ContentGenerator {
       }
       // Only log successful API response if no error occurred
       const durationMs = Date.now() - startTime;
+      const effectiveModel =
+        responses.find((r) => r.modelVersion)?.modelVersion ||
+        (this.config.getContentGeneratorConfig()?.authType ===
+        AuthType.USE_DEEPSEEK
+          ? req.model.includes('reasoner') || req.model.includes('pro')
+            ? 'deepseek-v4-pro'
+            : 'deepseek-v4-flash'
+          : req.model);
       this._logApiResponse(
         requestContents,
         durationMs,
-        responses[0]?.modelVersion || req.model,
+        effectiveModel,
         userPromptId,
         role,
         responses[0]?.responseId,

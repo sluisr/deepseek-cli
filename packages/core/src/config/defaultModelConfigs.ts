@@ -299,27 +299,27 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfigServiceConfig = {
     },
     'chat-compression-2.5-pro': {
       modelConfig: {
-        model: 'gemini-2.5-pro',
+        model: 'deepseek-v4-pro',
       },
     },
     'chat-compression-2.5-flash': {
       modelConfig: {
-        model: 'gemini-2.5-flash',
+        model: 'deepseek-v4-flash',
       },
     },
     'chat-compression-2.5-flash-lite': {
       modelConfig: {
-        model: 'gemini-2.5-flash-lite',
+        model: 'deepseek-v4-flash',
       },
     },
     'chat-compression-default': {
       modelConfig: {
-        model: 'gemini-3-pro-preview',
+        model: 'deepseek-v4-pro',
       },
     },
     'agent-history-provider-summarizer': {
       modelConfig: {
-        model: 'gemini-3-flash-preview',
+        model: 'deepseek-v4-flash',
       },
     },
   },
@@ -611,7 +611,7 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfigServiceConfig = {
     ],
     default: [
       {
-        model: 'gemini-2.5-pro',
+        model: 'deepseek-v4-pro',
         actions: {
           terminal: 'prompt',
           transient: 'prompt',
@@ -626,7 +626,7 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfigServiceConfig = {
         },
       },
       {
-        model: 'gemini-2.5-flash',
+        model: 'deepseek-v4-flash',
         isLastResort: true,
         maxAttempts: 10,
         actions: {
@@ -645,7 +645,7 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfigServiceConfig = {
     ],
     'auto-default': [
       {
-        model: 'gemini-2.5-pro',
+        model: 'deepseek-v4-pro',
         maxAttempts: 3,
         actions: {
           terminal: 'prompt',
@@ -661,7 +661,7 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfigServiceConfig = {
         },
       },
       {
-        model: 'gemini-2.5-flash',
+        model: 'deepseek-v4-flash',
         isLastResort: true,
         maxAttempts: 10,
         actions: {
@@ -695,7 +695,7 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfigServiceConfig = {
         },
       },
       {
-        model: 'gemini-2.5-flash',
+        model: 'deepseek-v4-flash',
         actions: {
           terminal: 'silent',
           transient: 'silent',
@@ -710,7 +710,7 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfigServiceConfig = {
         },
       },
       {
-        model: 'gemini-2.5-pro',
+        model: 'deepseek-v4-pro',
         isLastResort: true,
         actions: {
           terminal: 'silent',
