@@ -7,7 +7,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, rmSync, mkdirSync } from 'node:fs';
 import { wasmLoader } from 'esbuild-plugin-wasm';
 
 let esbuild;
@@ -22,6 +22,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
 const pkg = require(path.resolve(__dirname, 'package.json'));
+
+// Clean stale bundle chunks before bundling to keep package small (<25MB)
+rmSync(path.resolve(__dirname, 'bundle'), { recursive: true, force: true });
+mkdirSync(path.resolve(__dirname, 'bundle'), { recursive: true });
 
 function createWasmPlugins() {
   const wasmBinaryPlugin = {
