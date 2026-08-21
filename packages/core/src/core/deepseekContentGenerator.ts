@@ -137,16 +137,43 @@ async function fetchWithRetry(
   url: string,
   options: RequestInit,
   maxRetries = DEFAULT_MAX_RETRIES,
+  attemptTimeoutMs = 35000,
 ): Promise<Response> {
   let attempt = 0;
   while (true) {
     attempt++;
+    const attemptController = new AbortController();
+    let attemptTimer: NodeJS.Timeout | undefined;
+
+    const userSignal = options.signal;
+    if (userSignal?.aborted) {
+      throw new Error('Request was aborted by user.');
+    }
+
+    const onUserAbort = () => attemptController.abort();
+    if (userSignal) {
+      userSignal.addEventListener('abort', onUserAbort, { once: true });
+    }
+
+    attemptTimer = setTimeout(() => {
+      attemptController.abort(
+        new Error(`Request attempt timed out after ${attemptTimeoutMs / 1000}s`),
+      );
+    }, attemptTimeoutMs);
+
     try {
-      const response = await fetch(url, options);
+      const response = await fetch(url, {
+        ...options,
+        signal: attemptController.signal,
+      });
+      clearTimeout(attemptTimer);
+      if (userSignal) {
+        userSignal.removeEventListener('abort', onUserAbort);
+      }
       if (
         RETRYABLE_STATUS_CODES.has(response.status) &&
         attempt <= maxRetries &&
-        !options.signal?.aborted
+        !userSignal?.aborted
       ) {
         const backoffMs =
           Math.pow(2, attempt - 1) * 1000 + Math.random() * 500;
@@ -158,17 +185,28 @@ async function fetchWithRetry(
       }
       return response;
     } catch (err: any) {
+      clearTimeout(attemptTimer);
+      if (userSignal) {
+        userSignal.removeEventListener('abort', onUserAbort);
+      }
+      // Retry on network errors, undici timeouts, or attempt timeouts — but NOT if user cancelled
       if (
         attempt <= maxRetries &&
-        !options.signal?.aborted &&
+        !userSignal?.aborted &&
         (err.name === 'FetchError' ||
+          err.name === 'AbortError' ||
+          err.name === 'TimeoutError' ||
+          err.message?.includes('timed out') ||
           err.code === 'ECONNRESET' ||
-          err.code === 'ETIMEDOUT')
+          err.code === 'ETIMEDOUT' ||
+          err.code === 'UND_ERR_HEADERS_TIMEOUT' ||
+          err.code === 'UND_ERR_BODY_TIMEOUT' ||
+          err.code === 'UND_ERR_CONNECT_TIMEOUT')
       ) {
         const backoffMs =
           Math.pow(2, attempt - 1) * 1000 + Math.random() * 500;
         debugLogger.warn(
-          `[DeepSeek] Network error on ${url}: ${err.message}. Retrying in ${Math.round(backoffMs)}ms (attempt ${attempt}/${maxRetries})...`,
+          `[DeepSeek] Network/timeout error on ${url}: ${err.message}. Retrying in ${Math.round(backoffMs)}ms (attempt ${attempt}/${maxRetries})...`,
         );
         await new Promise((resolve) => setTimeout(resolve, backoffMs));
         continue;
@@ -198,9 +236,12 @@ export class DeepSeekContentGenerator implements ContentGenerator {
     if (this.cacheLoaded) return;
     try {
       if (fs.existsSync(this.CACHE_FILE)) {
-        const data = JSON.parse(fs.readFileSync(this.CACHE_FILE, 'utf-8'));
+        const raw = fs.readFileSync(this.CACHE_FILE, 'utf-8');
+        const data = JSON.parse(raw);
         for (const [k, v] of Object.entries(data)) {
-          this.reasoningCache.set(k, v as string);
+          if (typeof v === 'string') {
+            this.reasoningCache.set(k, v);
+          }
         }
         debugAppend(
           `[CACHE] Loaded ${this.reasoningCache.size} entries from disk.\n`,
@@ -212,14 +253,34 @@ export class DeepSeekContentGenerator implements ContentGenerator {
     this.cacheLoaded = true;
   }
 
+  private static isSaving = false;
   private static saveCache() {
-    try {
-      fs.mkdirSync(DEEPSEEK_STATE_DIR, { recursive: true });
-      const data = Object.fromEntries(this.reasoningCache);
-      fs.writeFileSync(this.CACHE_FILE, JSON.stringify(data, null, 2));
-    } catch {
-      // Ignore saving errors — never fail the API path because of cache I/O.
+    if (this.isSaving) return;
+    // Cap cache at 50 most recent entries to prevent disk/memory bloat (<100KB)
+    const MAX_CACHE_ENTRIES = 50;
+    if (this.reasoningCache.size > MAX_CACHE_ENTRIES) {
+      const keysToDelete = Array.from(this.reasoningCache.keys()).slice(
+        0,
+        this.reasoningCache.size - MAX_CACHE_ENTRIES,
+      );
+      for (const k of keysToDelete) {
+        this.reasoningCache.delete(k);
+      }
     }
+
+    this.isSaving = true;
+    // Asynchronous non-blocking file write
+    setImmediate(async () => {
+      try {
+        await fs.promises.mkdir(DEEPSEEK_STATE_DIR, { recursive: true });
+        const data = Object.fromEntries(this.reasoningCache);
+        await fs.promises.writeFile(this.CACHE_FILE, JSON.stringify(data));
+      } catch {
+        // Ignore saving errors
+      } finally {
+        this.isSaving = false;
+      }
+    });
   }
 
   // Runtime fallback overrides set when Config is not provided
@@ -897,7 +958,7 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       `--- REQUEST AT ${new Date().toISOString()} ---\n${JSON.stringify(body, null, 2)}\n\n`,
     );
     const userSignal =
-      (request as any)?.abortSignal || (request as any)?.signal;
+      (request as any)?.config?.abortSignal || (request as any)?.abortSignal || (request as any)?.signal;
     const response = await fetchWithRetry(endpointUrl, {
       method: 'POST',
       headers: {
@@ -945,7 +1006,7 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       `--- STREAM REQUEST AT ${new Date().toISOString()} ---\n${JSON.stringify(body, null, 2)}\n\n`,
     );
     const streamUserSignal =
-      (request as any)?.abortSignal || (request as any)?.signal;
+      (request as any)?.config?.abortSignal || (request as any)?.abortSignal || (request as any)?.signal;
     const response = await fetchWithRetry(streamEndpointUrl, {
       method: 'POST',
       headers: {
@@ -982,9 +1043,31 @@ export class DeepSeekContentGenerator implements ContentGenerator {
       let latestUsage: any = undefined;
       let isFinalChunkEmitted = false;
 
+      const CHUNK_TIMEOUT_MS = 45000; // 45s idle timeout between SSE chunks
       try {
         while (true) {
-          const { done, value } = await reader!.read();
+          let timeoutHandle: any;
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(() => {
+              const err = new Error(
+                'DeepSeek stream stalled: no data received for 45s',
+              );
+              err.name = 'TimeoutError';
+              reject(err);
+            }, CHUNK_TIMEOUT_MS);
+          });
+
+          let readResult: ReadableStreamReadResult<Uint8Array>;
+          try {
+            readResult = await Promise.race([
+              reader!.read(),
+              timeoutPromise,
+            ]);
+          } finally {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+          }
+
+          const { done, value } = readResult;
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });

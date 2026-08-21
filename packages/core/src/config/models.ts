@@ -51,35 +51,21 @@ export interface ModelCapabilityContext {
   getExperimentalDynamicModelConfiguration(): boolean;
 }
 
-export const PREVIEW_GEMINI_MODEL = 'gemini-3-pro-preview';
-export const PREVIEW_GEMINI_3_1_MODEL = 'gemini-3.1-pro-preview';
-export const PREVIEW_GEMINI_3_1_CUSTOM_TOOLS_MODEL =
-  'gemini-3.1-pro-preview-customtools';
-// TODO: set to none and const once the experiment for 3_5 flash rollut can be
-// cleaned up.
-export let PREVIEW_GEMINI_FLASH_MODEL = 'gemini-3-flash-preview';
-export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-pro';
-// TODO: Set to const and update to 'gemini-3.5-flash' once the experiment for
-// 3_5 flash rollut can be cleaned up.
-// This is set to either the same as the DEFAULT_GEMINI_3_5_FLASH_MODEL const
-// OR the SECONDARY_GEMINI_3_5_FLASH_MODEL depending on which is needed for
-// the user's backend as determined by hasGemini35FlashGAAccess in
-// packages/core/src/config/config.ts
-export let DEFAULT_GEMINI_FLASH_MODEL = 'gemini-2.5-flash';
-export const DEFAULT_GEMINI_3_5_FLASH_MODEL = 'gemini-3.5-flash';
-// This is resolved to 3.5 flash in backends where it is used,
-// however those backends do not expect to see the string gemini-3.5-flash
-// so we need to provide this model as an alternative name in certain instances.
-export const SECONDARY_GEMINI_3_5_FLASH_MODEL = 'gemini-3-flash';
+export const PREVIEW_GEMINI_MODEL = 'deepseek-v4-pro';
+export const PREVIEW_GEMINI_3_1_MODEL = 'deepseek-v4-pro';
+export const PREVIEW_GEMINI_3_1_CUSTOM_TOOLS_MODEL = 'deepseek-v4-pro';
+export let PREVIEW_GEMINI_FLASH_MODEL = 'deepseek-v4-flash';
+export const DEFAULT_GEMINI_MODEL = 'deepseek-v4-pro';
+export let DEFAULT_GEMINI_FLASH_MODEL = 'deepseek-v4-flash';
+export const DEFAULT_GEMINI_3_5_FLASH_MODEL = 'deepseek-v4-flash';
+export const SECONDARY_GEMINI_3_5_FLASH_MODEL = 'deepseek-v4-flash';
 
 // Used to set default flash models based on access
-// TODO: Cleanup once the experiment for 3_5 flash rollut can be cleaned up.
 export function setFlashModels(preview: string, defaultFlash: string) {
   PREVIEW_GEMINI_FLASH_MODEL = preview;
   DEFAULT_GEMINI_FLASH_MODEL = defaultFlash;
 }
-export const DEFAULT_GEMINI_FLASH_LITE_MODEL = 'gemini-3.1-flash-lite';
-/** @deprecated Gemini 3.1 Flash Lite is now GA. Use DEFAULT_GEMINI_FLASH_LITE_MODEL. */
+export const DEFAULT_GEMINI_FLASH_LITE_MODEL = 'deepseek-v4-flash';
 export const PREVIEW_GEMINI_FLASH_LITE_MODEL = 'none';
 
 export const DEEPSEEK_CHAT_MODEL = 'deepseek-v4-flash';

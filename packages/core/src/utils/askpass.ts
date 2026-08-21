@@ -41,10 +41,15 @@ const fs = require('fs');
 const tty = require('tty');
 
 const promptMsg = process.argv[2] || 'Password: ';
+const NL = String.fromCharCode(10);
 
 // If DEEPSEEK_SUDO_PASSWORD is set, echo it immediately (non-interactive mode)
 if (process.env.DEEPSEEK_SUDO_PASSWORD) {
-  process.stdout.write(process.env.DEEPSEEK_SUDO_PASSWORD);
+  try {
+    fs.writeSync(1, process.env.DEEPSEEK_SUDO_PASSWORD + NL);
+  } catch {
+    process.stdout.write(process.env.DEEPSEEK_SUDO_PASSWORD + NL);
+  }
   process.exit(0);
 }
 
@@ -56,7 +61,7 @@ try {
   const inStream = new tty.ReadStream(ttyFdIn);
   const outStream = new tty.WriteStream(ttyFdOut);
 
-  outStream.write(\`\\n\\x1b[1;36m🔑 [DeepSeek CLI]\\x1b[0m \\x1b[1m\${promptMsg}\\x1b[0m \`);
+  outStream.write(NL + '\\x1b[1;36m🔑 [DeepSeek CLI]\\x1b[0m \\x1b[1m' + promptMsg + '\\x1b[0m ');
 
   inStream.setRawMode(true);
   inStream.resume();
@@ -67,22 +72,26 @@ try {
   inStream.on('data', (chunk) => {
     for (let i = 0; i < chunk.length; i++) {
       const char = chunk[i];
-      if (char === '\\n' || char === '\\r' || char === '\\u0004') {
-        outStream.write('\\n');
+      if (char === String.fromCharCode(10) || char === String.fromCharCode(13) || char === String.fromCharCode(4)) {
+        outStream.write(NL);
         try {
           inStream.setRawMode(false);
           inStream.pause();
         } catch {}
-        process.stdout.write(password);
+        try {
+          fs.writeSync(1, password + NL);
+        } catch {
+          process.stdout.write(password + NL);
+        }
         process.exit(0);
-      } else if (char === '\\u0003') {
-        outStream.write('^C\\n');
+      } else if (char === String.fromCharCode(3)) {
+        outStream.write('^C' + NL);
         try {
           inStream.setRawMode(false);
           inStream.pause();
         } catch {}
         process.exit(130);
-      } else if (char === '\\u0008' || char === '\\x7f') {
+      } else if (char === String.fromCharCode(8) || char === String.fromCharCode(127)) {
         if (password.length > 0) {
           password = password.slice(0, -1);
         }
@@ -96,13 +105,7 @@ try {
 }
 `;
 
-let cachedAskPassPath: string | null = null;
-
 export function getOrInitAskPassScript(): string {
-  if (cachedAskPassPath && fs.existsSync(cachedAskPassPath)) {
-    return cachedAskPassPath;
-  }
-
   const dir = path.join(
     process.env['HOME'] || process.env['USERPROFILE'] || os.tmpdir(),
     '.deepseek',
@@ -115,7 +118,6 @@ export function getOrInitAskPassScript(): string {
       mode: 0o755,
       encoding: 'utf-8',
     });
-    cachedAskPassPath = scriptPath;
     return scriptPath;
   } catch {
     const fallbackPath = path.join(os.tmpdir(), 'deepseek_askpass.cjs');
@@ -123,7 +125,6 @@ export function getOrInitAskPassScript(): string {
       mode: 0o755,
       encoding: 'utf-8',
     });
-    cachedAskPassPath = fallbackPath;
     return fallbackPath;
   }
 }

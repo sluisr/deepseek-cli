@@ -60,6 +60,7 @@ const mockFileSystem = new Map<string, string>();
 vi.mock('node:fs', () => {
   const fsModule = {
     mkdirSync: vi.fn(),
+    renameSync: vi.fn(),
     writeFileSync: vi.fn((path: string, data: string) => {
       mockFileSystem.set(path, data);
     }),
@@ -814,7 +815,7 @@ describe('Gemini Client (client.ts)', () => {
       );
     });
 
-    it('yields UserCancelled when processTurn throws AbortError', async () => {
+    it('throws AbortError when signal is NOT aborted (network timeout, not user cancel)', async () => {
       const abortError = new Error('Aborted');
       abortError.name = 'AbortError';
       vi.spyOn(client['loopDetector'], 'turnStarted').mockRejectedValueOnce(
@@ -824,6 +825,25 @@ describe('Gemini Client (client.ts)', () => {
       const stream = client.sendMessageStream(
         [{ text: 'Hi' }],
         new AbortController().signal,
+        'prompt-id-abort-error',
+      );
+
+      await expect(fromAsync(stream)).rejects.toThrow('Aborted');
+    });
+
+    it('yields UserCancelled when signal IS aborted by the user', async () => {
+      const controller = new AbortController();
+      const abortError = new Error('Aborted');
+      abortError.name = 'AbortError';
+      vi.spyOn(client['loopDetector'], 'turnStarted').mockRejectedValueOnce(
+        abortError,
+      );
+      // Simulate user cancellation
+      controller.abort();
+
+      const stream = client.sendMessageStream(
+        [{ text: 'Hi' }],
+        controller.signal,
         'prompt-id-abort-error',
       );
       const events = await fromAsync(stream);

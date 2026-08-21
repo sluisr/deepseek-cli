@@ -59,6 +59,18 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfigServiceConfig = {
     // ensure these model configs can be used interactively.
     // TODO(joshualitt): Introduce internal base configs for the various models,
     // note: we will have to think carefully about names.
+    'deepseek-v4-flash': {
+      extends: 'chat-base-3',
+      modelConfig: {
+        model: 'deepseek-v4-flash',
+      },
+    },
+    'deepseek-v4-pro': {
+      extends: 'chat-base-3',
+      modelConfig: {
+        model: 'deepseek-v4-pro',
+      },
+    },
     'gemini-3-pro-preview': {
       extends: 'chat-base-3',
       modelConfig: {
@@ -403,6 +415,23 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfigServiceConfig = {
       features: { thinking: true, multimodalToolUse: false },
     },
 
+    'deepseek-v4-flash': {
+      displayName: 'DeepSeek V4 Flash',
+      tier: 'flash',
+      family: 'deepseek-v4',
+      isPreview: false,
+      isVisible: true,
+      features: { thinking: true, multimodalToolUse: false },
+    },
+    'deepseek-v4-pro': {
+      displayName: 'DeepSeek V4 Pro',
+      tier: 'pro',
+      family: 'deepseek-v4',
+      isPreview: false,
+      isVisible: true,
+      features: { thinking: true, multimodalToolUse: false },
+    },
+
     // Aliases
     auto: {
       displayName: 'Auto',
@@ -443,6 +472,12 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfigServiceConfig = {
     },
   },
   modelIdResolutions: {
+    'deepseek-v4-flash': {
+      default: 'deepseek-v4-flash',
+    },
+    'deepseek-v4-pro': {
+      default: 'deepseek-v4-pro',
+    },
     'gemma-4-31b-it': {
       default: 'gemma-4-31b-it',
     },
@@ -451,164 +486,57 @@ export const DEFAULT_MODEL_CONFIGS: ModelConfigServiceConfig = {
     },
 
     'gemini-3.1-pro-preview': {
-      default: 'gemini-3.1-pro-preview',
-      contexts: [
-        { condition: { hasAccessToPreview: false }, target: 'gemini-2.5-pro' },
-        {
-          condition: { useCustomTools: true },
-          target: 'gemini-3.1-pro-preview-customtools',
-        },
-      ],
+      default: 'deepseek-v4-pro',
     },
     'gemini-3.1-pro-preview-customtools': {
-      default: 'gemini-3.1-pro-preview-customtools',
-      contexts: [
-        { condition: { hasAccessToPreview: false }, target: 'gemini-2.5-pro' },
-      ],
+      default: 'deepseek-v4-pro',
     },
     'gemini-3-flash-preview': {
-      default: 'gemini-3-flash-preview',
-      contexts: [
-        {
-          condition: { hasAccessToPreview: false, useGemini3_5Flash: true },
-          target: 'gemini-3.5-flash',
-        },
-        {
-          condition: { hasAccessToPreview: false, useGemini3_5Flash: false },
-          target: 'gemini-2.5-flash',
-        },
-      ],
+      default: 'deepseek-v4-flash',
     },
     'gemini-3.5-flash': {
-      default: 'gemini-3.5-flash',
-      contexts: [
-        {
-          condition: { useGemini3_5Flash: false, hasAccessToPreview: false },
-          target: 'gemini-2.5-flash',
-        },
-        {
-          condition: { useGemini3_5Flash: false },
-          target: 'gemini-3-flash-preview',
-        },
-      ],
+      default: 'deepseek-v4-flash',
     },
     'gemini-2.5-flash': {
-      default: 'gemini-2.5-flash',
-      contexts: [
-        { condition: { useGemini3_5Flash: true }, target: 'gemini-3.5-flash' },
-      ],
+      default: 'deepseek-v4-flash',
+    },
+    'gemini-2.5-pro': {
+      default: 'deepseek-v4-pro',
     },
     'gemini-3-pro-preview': {
-      default: 'gemini-3-pro-preview',
-      contexts: [
-        { condition: { hasAccessToPreview: false }, target: 'gemini-2.5-pro' },
-        {
-          condition: { useGemini3_1: true, useCustomTools: true },
-          target: 'gemini-3.1-pro-preview-customtools',
-        },
-        {
-          condition: { useGemini3_1: true },
-          target: 'gemini-3.1-pro-preview',
-        },
-      ],
+      default: 'deepseek-v4-pro',
     },
     auto: {
-      default: 'gemini-3-pro-preview',
-      contexts: [
-        { condition: { hasAccessToPreview: false }, target: 'gemini-2.5-pro' },
-        {
-          condition: { useGemini3_1: true, useCustomTools: true },
-          target: 'gemini-3.1-pro-preview-customtools',
-        },
-        {
-          condition: { useGemini3_1: true },
-          target: 'gemini-3.1-pro-preview',
-        },
-      ],
+      default: 'deepseek-v4-flash',
     },
     pro: {
-      default: 'gemini-3-pro-preview',
-      contexts: [
-        { condition: { hasAccessToPreview: false }, target: 'gemini-2.5-pro' },
-        {
-          condition: { useGemini3_1: true, useCustomTools: true },
-          target: 'gemini-3.1-pro-preview-customtools',
-        },
-        {
-          condition: { useGemini3_1: true },
-          target: 'gemini-3.1-pro-preview',
-        },
-      ],
+      default: 'deepseek-v4-pro',
     },
     'gemini-3.1-flash-lite': {
-      default: 'gemini-3.1-flash-lite',
+      default: 'deepseek-v4-flash',
     },
     flash: {
-      default: 'gemini-3-flash-preview',
-      contexts: [
-        { condition: { useGemini3_5Flash: true }, target: 'gemini-3.5-flash' },
-        {
-          condition: { hasAccessToPreview: false },
-          target: 'gemini-2.5-flash',
-        },
-      ],
+      default: 'deepseek-v4-flash',
     },
     'flash-lite': {
-      default: 'gemini-3.1-flash-lite',
+      default: 'deepseek-v4-flash',
     },
     'auto-gemini-3': {
-      default: 'gemini-3-pro-preview',
-      contexts: [
-        { condition: { hasAccessToPreview: false }, target: 'gemini-2.5-pro' },
-        {
-          condition: { useGemini3_1: true, useCustomTools: true },
-          target: 'gemini-3.1-pro-preview-customtools',
-        },
-        {
-          condition: { useGemini3_1: true },
-          target: 'gemini-3.1-pro-preview',
-        },
-      ],
+      default: 'deepseek-v4-flash',
     },
     'auto-gemini-2.5': {
-      default: 'gemini-2.5-pro',
+      default: 'deepseek-v4-flash',
     },
   },
   classifierIdResolutions: {
     flash: {
-      default: 'gemini-3-flash-preview',
-      contexts: [
-        { condition: { useGemini3_5Flash: true }, target: 'gemini-3.5-flash' },
-        {
-          condition: { hasAccessToPreview: false },
-          target: 'gemini-2.5-flash',
-        },
-        {
-          condition: { requestedModels: ['gemini-2.5-pro', 'auto-gemini-2.5'] },
-          target: 'gemini-2.5-flash',
-        },
-      ],
+      default: 'deepseek-v4-flash',
+    },
+    'flash-lite': {
+      default: 'deepseek-v4-flash',
     },
     pro: {
-      default: 'gemini-3-pro-preview',
-      contexts: [
-        {
-          condition: { hasAccessToPreview: false },
-          target: 'gemini-2.5-pro',
-        },
-        {
-          condition: { requestedModels: ['gemini-2.5-pro', 'auto-gemini-2.5'] },
-          target: 'gemini-2.5-pro',
-        },
-        {
-          condition: { useGemini3_1: true, useCustomTools: true },
-          target: 'gemini-3.1-pro-preview-customtools',
-        },
-        {
-          condition: { useGemini3_1: true },
-          target: 'gemini-3.1-pro-preview',
-        },
-      ],
+      default: 'deepseek-v4-pro',
     },
   },
   modelChains: {

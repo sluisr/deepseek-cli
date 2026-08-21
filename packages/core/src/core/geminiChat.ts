@@ -402,7 +402,26 @@ export class GeminiChat {
     displayContent?: PartListUnion,
     apiHistoryOverride?: Content[],
   ): Promise<AsyncGenerator<StreamEvent>> {
-    await this.sendPromise;
+    if (signal?.aborted) {
+      throw new Error('Request was cancelled before sending.');
+    }
+    // Race sendPromise with abort signal and a 15s safety timeout to prevent deadlocks from stuck prior streams
+    let sendPromiseRaceTimer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        this.sendPromise,
+        new Promise<void>((resolve, reject) => {
+          if (signal) {
+            signal.addEventListener('abort', () => reject(new Error('Request cancelled')), {
+              once: true,
+            });
+          }
+          sendPromiseRaceTimer = setTimeout(() => resolve(), 15000);
+        }),
+      ]);
+    } finally {
+      if (sendPromiseRaceTimer) clearTimeout(sendPromiseRaceTimer);
+    }
 
     const historyLengthBefore = this.agentHistory.length;
     const baselinePromptTokenCount = this.lastPromptTokenCount;

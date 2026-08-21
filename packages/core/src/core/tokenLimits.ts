@@ -21,7 +21,7 @@ type TokenCount = number;
 
 export const DEFAULT_TOKEN_LIMIT = 1_048_576;
 export const GEMMA_4_TOKEN_LIMIT = 256_000;
-export const DEEPSEEK_TOKEN_LIMIT = 64_000;
+export const DEEPSEEK_TOKEN_LIMIT = 128_000;
 
 export function tokenLimit(model: Model): TokenCount {
   if (

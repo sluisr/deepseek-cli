@@ -35,7 +35,7 @@ import {
   type RetryAvailabilityContext,
 } from '../utils/retry.js';
 import type { ValidationRequiredError } from '../utils/googleQuotaErrors.js';
-import { getErrorMessage, isAbortError } from '../utils/errors.js';
+import { getErrorMessage } from '../utils/errors.js';
 import { tokenLimit } from './tokenLimits.js';
 import type {
   ChatRecordingService,
@@ -707,11 +707,40 @@ export class GeminiClient {
     );
 
     if (estimatedRequestTokenCount > remainingTokenCount) {
-      yield {
-        type: GeminiEventType.ContextWindowWillOverflow,
-        value: { estimatedRequestTokenCount, remainingTokenCount },
-      };
-      return turn;
+      // Attempt emergency forced compression before giving up
+      const emergencyCompressed = await this.tryCompressChat(
+        prompt_id,
+        true,
+        signal,
+      );
+      if (
+        emergencyCompressed.compressionStatus === CompressionStatus.COMPRESSED ||
+        emergencyCompressed.compressionStatus === CompressionStatus.CONTENT_TRUNCATED
+      ) {
+        yield {
+          type: GeminiEventType.ChatCompressed,
+          value: emergencyCompressed,
+        };
+        const updatedRemainingTokenCount =
+          tokenLimit(modelForLimitCheck) -
+          this.getChat().getLastPromptTokenCount();
+        if (estimatedRequestTokenCount > updatedRemainingTokenCount) {
+          yield {
+            type: GeminiEventType.ContextWindowWillOverflow,
+            value: {
+              estimatedRequestTokenCount,
+              remainingTokenCount: updatedRemainingTokenCount,
+            },
+          };
+          return turn;
+        }
+      } else {
+        yield {
+          type: GeminiEventType.ContextWindowWillOverflow,
+          value: { estimatedRequestTokenCount, remainingTokenCount },
+        };
+        return turn;
+      }
     }
 
     // Prevent context updates from being sent while a tool call is
@@ -1034,7 +1063,11 @@ export class GeminiClient {
         }
       }
     } catch (error) {
-      if (signal?.aborted || isAbortError(error)) {
+      // Only treat as user cancellation when the user's own abort signal
+      // was explicitly triggered (e.g. Escape / Ctrl+C). Do NOT conflate
+      // network timeouts or internal AbortErrors (from undici/fetch) with
+      // user cancellation — those should propagate as normal errors.
+      if (signal?.aborted) {
         yield { type: GeminiEventType.UserCancelled };
         return turn;
       }
