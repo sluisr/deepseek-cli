@@ -392,13 +392,13 @@ export function ModelDialog({ onClose }: ModelDialogProps): React.JSX.Element {
         {
           value: DEEPSEEK_CHAT_MODEL,
           title: 'DeepSeek-V4-Flash',
-          description: `Fast, efficient and cost-effective (64k context)  ·  t:${temperature.toFixed(1)}  r:${reasoningEffort}`,
+          description: `Fast, efficient and cost-effective (128k context)  ·  t:${temperature.toFixed(1)}  r:${reasoningEffort}`,
           key: DEEPSEEK_CHAT_MODEL,
         },
         {
           value: DEEPSEEK_REASONER_MODEL,
           title: 'DeepSeek-V4-Pro (Thinking)',
-          description: `Superior performance with deep reasoning (64k context)  ·  r:${proReasoningEffort}`,
+          description: `Superior performance with deep reasoning (128k context)  ·  r:${proReasoningEffort}`,
           key: DEEPSEEK_REASONER_MODEL,
         },
         {
