@@ -117,6 +117,54 @@ describe('DeepSeekContentGenerator', () => {
       expect(toolMessages[0].tool_call_id).toBe('call_bar_01');
       expect(toolMessages[0].content).toBe('{"content":"export const x = 1;"}');
     });
+
+    it('backfills reasoning_content for a text-only assistant turn', () => {
+      // Regression for the post-compression HTTP 400. Auto-compression inserts a
+      // synthetic acknowledgement turn with no tool calls and no reasoning.
+      // DeepSeek thinking models reject that turn unless reasoning_content is
+      // present. Clear the reasoning cache for a deterministic result.
+      (DeepSeekContentGenerator as any).reasoningCache.clear();
+
+      const request: GenerateContentParameters = {
+        model: 'deepseek-v4-flash',
+        contents: [
+          { role: 'user', parts: [{ text: 'summary of earlier work' }] },
+          {
+            role: 'model',
+            parts: [{ text: 'Got it. Thanks for the additional context!' }],
+          },
+        ],
+      };
+
+      const body = (generator as any).mapGoogleToDeepSeek(request);
+      const assistantMessages = body.messages.filter(
+        (m: any) => m.role === 'assistant',
+      );
+      expect(assistantMessages).toHaveLength(1);
+      expect(assistantMessages[0].reasoning_content).toBe(
+        'Thinking process completed.',
+      );
+      expect(assistantMessages[0].tool_calls).toBeUndefined();
+    });
+
+    it('skips backfill on the plain non-thinking chat model', () => {
+      (DeepSeekContentGenerator as any).reasoningCache.clear();
+
+      const request: GenerateContentParameters = {
+        model: 'deepseek-chat',
+        contents: [
+          { role: 'user', parts: [{ text: 'hello' }] },
+          { role: 'model', parts: [{ text: 'hi there' }] },
+        ],
+      };
+
+      const body = (generator as any).mapGoogleToDeepSeek(request);
+      const assistantMessages = body.messages.filter(
+        (m: any) => m.role === 'assistant',
+      );
+      expect(assistantMessages).toHaveLength(1);
+      expect(assistantMessages[0].reasoning_content).toBeUndefined();
+    });
   });
 
   describe('generateContentStream', () => {

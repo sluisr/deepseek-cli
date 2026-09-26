@@ -478,14 +478,18 @@ export class DeepSeekContentGenerator implements ContentGenerator {
             cachedReasoning ||
             undefined;
 
-          // DeepSeek Reasoner requirement: If this is an assistant turn (especially with tool calls)
-          // and the API requires reasoning_content, we must never send undefined when reasoning was used.
+          // DeepSeek thinking-mode models require every assistant turn to carry
+          // `reasoning_content`; the API rejects the request with HTTP 400
+          // otherwise ("The `reasoning_content` in the thinking mode must be
+          // passed back to the API"). This includes text-only turns, not only
+          // tool-call turns — e.g. the synthetic acknowledgement turn that
+          // auto-compression inserts after the summary. `resolveDeepSeekModel`
+          // falls back to plain `deepseek-chat`, a non-thinking model.
+          const usesThinkingMode =
+            this.resolveDeepSeekModel(request.model) !== 'deepseek-chat';
           if (
             !reasoning_content &&
-            (fnCallParts.length > 0 ||
-              (request.model &&
-                (request.model.includes('reasoner') ||
-                  request.model.includes('pro'))))
+            (fnCallParts.length > 0 || usesThinkingMode)
           ) {
             reasoning_content = 'Thinking process completed.';
           }
