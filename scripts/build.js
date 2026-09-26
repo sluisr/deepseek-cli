@@ -44,14 +44,27 @@ if (process.env.CI) {
     cwd: root,
   });
 
+  // Build devtools before the other workspaces: the cli workspace imports its
+  // types (packages/cli/src/utils/devtoolsService.ts), so its dist/ directory
+  // must exist before the cli build runs `tsc --build`.
+  console.log('Building @google/gemini-cli-devtools...');
+  execSync('npm run build -w @google/gemini-cli-devtools', {
+    stdio: 'inherit',
+    cwd: root,
+  });
+
   // Build the rest of workspaces
   console.log('Building other workspaces...');
   const workspaceInfo = JSON.parse(
     execSync('npm query .workspace --json', { cwd: root, encoding: 'utf-8' }),
   );
+  const prebuiltWorkspaces = new Set([
+    '@google/gemini-cli-core',
+    '@google/gemini-cli-devtools',
+  ]);
   const otherWorkspaces = workspaceInfo
     .map((w) => w.name)
-    .filter((name) => name !== '@google/gemini-cli-core');
+    .filter((name) => !prebuiltWorkspaces.has(name));
 
   for (const w of otherWorkspaces) {
     console.log(`Building workspace ${w}...`);
