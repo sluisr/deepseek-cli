@@ -1,5 +1,12 @@
 # 🐋 DeepSeek CLI
 
+> [!WARNING]
+> **⚠️ DEPRECATED — this project is no longer maintained.**
+> DeepSeek CLI has been superseded by **[Corex](https://github.com/sluisr/corex)**, a native Rust rewrite that is actively developed and supports DeepSeek, Gemini, Claude, OpenAI & local LLMs.
+> Known issues (e.g. config path inherited from Gemini CLI, reduced context limits) will **not** be fixed here. Please open any new issue in the [Corex repository](https://github.com/sluisr/corex/issues).
+>
+> **⚠️ DESCONTINUADO — este proyecto ya no recibe mantenimiento.** Ahora el desarrollo continúa en **[Corex](https://github.com/sluisr/corex)**. Abre cualquier issue nuevo allí.
+
 > Unofficial fork of Google Gemini CLI adapted to use the [DeepSeek API](https://platform.deepseek.com/). Original work Copyright 2025 Google LLC — Adaptations Copyright 2026 sluisr — Apache 2.0 License.
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
