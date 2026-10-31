@@ -60,6 +60,7 @@ describe('<ModelDialog />', () => {
   const mockGetGemini31FlashLiteLaunchedSync = vi.fn();
   const mockGetProModelNoAccess = vi.fn();
   const mockGetProModelNoAccessSync = vi.fn();
+  const mockGetContentGeneratorConfig = vi.fn();
 
   interface MockConfig extends Partial<Config> {
     setModel: (model: string, isTemporary?: boolean) => void;
@@ -92,6 +93,7 @@ describe('<ModelDialog />', () => {
     getExperimentalGemma: () => false,
     getLastRetrievedQuota: () => ({ buckets: [] }),
     getSessionId: () => 'test-session-id',
+    getContentGeneratorConfig: mockGetContentGeneratorConfig,
   };
 
   beforeEach(() => {
@@ -101,6 +103,7 @@ describe('<ModelDialog />', () => {
     mockGetGemini31LaunchedSync.mockReturnValue(false);
     mockGetProModelNoAccess.mockResolvedValue(false);
     mockGetProModelNoAccessSync.mockReturnValue(false);
+    mockGetContentGeneratorConfig.mockReturnValue({});
 
     // Default implementation for getDisplayString
     mockGetDisplayString.mockImplementation((val: string) => {
@@ -359,6 +362,26 @@ describe('<ModelDialog />', () => {
 
     expect(lastFrame()).toContain('Manual (My Custom Model Display)');
     unmount();
+  });
+
+  describe('DeepSeek auth', () => {
+    beforeEach(() => {
+      mockGetContentGeneratorConfig.mockReturnValue({
+        authType: AuthType.USE_DEEPSEEK,
+      });
+    });
+
+    it('advertises the 128k context window for both DeepSeek models', async () => {
+      const { lastFrame, unmount } = await renderComponent();
+
+      const frame = lastFrame();
+      expect(frame).toContain('DeepSeek-V4-Flash');
+      expect(frame).toContain('DeepSeek-V4-Pro (Thinking)');
+      expect(frame).toContain('128k context');
+      expect(frame).not.toContain('64k context');
+
+      unmount();
+    });
   });
 
   describe('Preview Models', () => {
